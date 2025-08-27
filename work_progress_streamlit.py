@@ -303,8 +303,8 @@ def add_work_item(db_manager, current_user, week_start, selected_user=None):
         
         with col2:
             completion_rate = st.slider("完成度 (%)", 0, 100, 0)
-            revenue = st.number_input("營收", min_value=0.0, value=0.0, step=1000.0)
-            cost = st.number_input("成本", min_value=0.0, value=0.0, step=1000.0)
+            revenue = st.number_input("營收", min_value=0, value=0, step=1000, format="%d")
+            cost = st.number_input("成本", min_value=0, value=0, step=1000, format="%d")
         
         solution = st.text_area("解決方案", placeholder="請輸入解決方案", height=100)
         
@@ -527,19 +527,19 @@ def edit_work_item(db_manager, current_user, selected_user=None):
                     
                     revenue_value = item_data['revenue']
                     if pd.isna(revenue_value):
-                        revenue_value = 0.0
+                        revenue_value = 0
                     else:
-                        revenue_value = float(revenue_value)
+                        revenue_value = int(float(revenue_value))
                     
                     cost_value = item_data['cost']
                     if pd.isna(cost_value):
-                        cost_value = 0.0
+                        cost_value = 0
                     else:
-                        cost_value = float(cost_value)
+                        cost_value = int(float(cost_value))
                     
                     completion_rate = st.slider("完成度 (%)", 0, 100, completion_value)
-                    revenue = st.number_input("營收", min_value=0.0, value=revenue_value, step=1000.0)
-                    cost = st.number_input("成本", min_value=0.0, value=cost_value, step=1000.0)
+                    revenue = st.number_input("營收", min_value=0, value=revenue_value, step=1000, format="%d")
+                    cost = st.number_input("成本", min_value=0, value=cost_value, step=1000, format="%d")
                 
                 # 安全地處理文字欄位
                 solution_value = item_data['solution']
@@ -1038,8 +1038,8 @@ def main_dashboard():
             
             # 安全地格式化數值欄位
             display_df['completion_rate'] = display_df['completion_rate'].fillna(0).astype(str) + '%'
-            display_df['revenue'] = display_df['revenue'].fillna(0).apply(lambda x: f"{x:,.0f}")
-            display_df['cost'] = display_df['cost'].fillna(0).apply(lambda x: f"{x:,.0f}")
+            display_df['revenue'] = display_df['revenue'].fillna(0).apply(lambda x: f"{int(x):,}")
+            display_df['cost'] = display_df['cost'].fillna(0).apply(lambda x: f"{int(x):,}")
             display_df['gross_profit'] = (display_df['gross_profit'].fillna(0) * 100).apply(lambda x: f"{x:.2f}%")
             
             # 安全地處理文字欄位

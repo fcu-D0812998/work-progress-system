@@ -1,0 +1,10 @@
+# 資料庫連線設定
+DB_HOST=ep-lively-base-a16akjqp-pooler.ap-southeast-1.aws.neon.tech
+DB_NAME=neondb
+DB_USER=neondb_owner
+DB_PASSWORD=npg_EPXNiYes6A0k
+DB_PORT=5432
+DB_SSLMODE=require
+
+# JWT 設定
+JWT_SECRET=your-secret-key
