@@ -6,7 +6,7 @@ from openpyxl import load_workbook
 from openpyxl.cell.cell import MergedCell
 import io
 
-st.title(" 客品編號派工單填寫系統（含下載）")
+st.header(" 客品編號派工單填寫系統（含下載）")
 
 # ========= 檢查 NAS 連線 =========
 def check_nas_connection():
