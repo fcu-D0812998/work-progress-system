@@ -25,15 +25,19 @@ if logo_base64:
     col1, col2 = st.columns([1, 4])
     with col1:
         st.markdown(f"""
-        <div style="text-align: center; margin: 0.5rem 0;">
+        <div style="text-align: left; margin: 0.5rem 0;">
             <img src="data:image/x-icon;base64,{logo_base64}" alt="德烜科技 Logo" style="max-width: 80px; height: auto; vertical-align: middle;">
         </div>
         """, unsafe_allow_html=True)
     with col2:
-        st.title("德烜科技半導體工作平台")
+        st.markdown("""
+        <h1 style="text-align: left !important; margin: 0.5rem 0; padding-left: 0; margin-left: -200px;">德烜科技半導體工作平台</h1>
+        """, unsafe_allow_html=True)
 else:
     # 如果沒有 Logo，只顯示標題
-    st.title("德烜科技半導體工作平台")
+    st.markdown("""
+    <h1 style="text-align: left !important; margin: 0.5rem 0; padding-left: 0; margin-left: -20px;">德烜科技半導體工作平台</h1>
+    """, unsafe_allow_html=True)
 
 st.markdown("---")
 
