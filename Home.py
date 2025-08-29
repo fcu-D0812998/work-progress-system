@@ -3,7 +3,7 @@ import base64
 
 # 設定頁面配置
 st.set_page_config(
-    page_title="德烜科技線上分析工具",
+    page_title="德烜科技半導體作業作業平台",
     page_icon="logoicon.ico",
     layout="wide"
 )
@@ -30,10 +30,10 @@ if logo_base64:
         </div>
         """, unsafe_allow_html=True)
     with col2:
-        st.title("德烜科技半導體部門工作平台")
+        st.title("德烜科技半導體工作平台")
 else:
     # 如果沒有 Logo，只顯示標題
-    st.title("德烜科技半導體部門工作平台")
+    st.title("德烜科技半導體工作平台")
 
 st.markdown("---")
 
