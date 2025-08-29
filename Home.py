@@ -22,21 +22,42 @@ def get_logo_base64():
 # 顯示 Logo 和標題並排
 logo_base64 = get_logo_base64()
 if logo_base64:
-    col1, col2 = st.columns([1, 4])
-    with col1:
-        st.markdown(f"""
-        <div style="text-align: left; margin: 0.5rem 0;">
-            <img src="data:image/x-icon;base64,{logo_base64}" alt="德烜科技 Logo" style="max-width: 80px; height: auto; vertical-align: middle;">
-        </div>
-        """, unsafe_allow_html=True)
-    with col2:
-        st.markdown("""
-        <h1 style="text-align: left !important; margin: 0.5rem 0; padding-left: 0; margin-left: -200px;">德烜科技半導體工作平台</h1>
-        """, unsafe_allow_html=True)
+    st.markdown(f"""
+    <div style="
+        display: flex;
+        align-items: center;
+        gap: 15px;
+        margin: 1rem 0;
+        flex-wrap: wrap;
+    ">
+        <img src="data:image/x-icon;base64,{logo_base64}" 
+             alt="德烜科技 Logo" 
+             style="
+                width: 60px;
+                height: 60px;
+                flex-shrink: 0;
+                object-fit: contain;
+             ">
+        <h1 style="
+            margin: 0;
+            font-size: 2.5rem;
+            font-weight: bold;
+            color: #fc953a;
+            flex: 1;
+            min-width: 300px;
+        ">德烜科技半導體工作平台</h1>
+    </div>
+    """, unsafe_allow_html=True)
 else:
     # 如果沒有 Logo，只顯示標題
     st.markdown("""
-    <h1 style="text-align: left !important; margin: 0.5rem 0; padding-left: 0; margin-left: -20px;">德烜科技半導體工作平台</h1>
+    <h1 style="
+        text-align: left;
+        margin: 1rem 0;
+        font-size: 2.5rem;
+        font-weight: bold;
+        color: #1f77b4;
+    ">德烜科技半導體工作平台</h1>
     """, unsafe_allow_html=True)
 
 st.markdown("---")
