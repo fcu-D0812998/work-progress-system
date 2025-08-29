@@ -8,33 +8,31 @@ import plotly.express as px
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 import io
+import base64
+from PIL import Image
 import os
 
-# 資料庫連線設定 - 本地測試版本
+# 資料庫連線設定 - Streamlit Cloud 專用
 def get_database_config():
-    """取得資料庫連線設定 - 本地測試版本"""
+    """取得資料庫連線設定 - 從 Streamlit Cloud Secrets 讀取"""
     return {
-        'host': "ep-lively-base-a16akjqp-pooler.ap-southeast-1.aws.neon.tech",
-        'database': "neondb",
-        'user': "neondb_owner",
-        'password': "npg_EPXNiYes6A0k",
-        'port': "5432",
-        'sslmode': "require"
+        'host': st.secrets.get('DB_HOST'),
+        'database': st.secrets.get('DB_NAME'),
+        'user': st.secrets.get('DB_USER'),
+        'password': st.secrets.get('DB_PASSWORD'),
+        'port': st.secrets.get('DB_PORT'),
+        'sslmode': st.secrets.get('DB_SSLMODE')
     }
 
-# JWT 設定 - 本地測試版本
+# JWT 設定 - Streamlit Cloud 專用
 def get_jwt_secret():
-    """取得 JWT 密鑰 - 本地測試版本"""
-    return "your-secret-key"
+    """取得 JWT 密鑰 - 從 Streamlit Cloud Secrets 讀取"""
+    return st.secrets.get('JWT_SECRET')
 
 # 初始化設定
 DATABASE_CONFIG = get_database_config()
 JWT_SECRET = get_jwt_secret()
 JWT_ALGORITHM = "HS256"
-
-
-
-
 
 class DatabaseManager:
     """資料庫管理類別"""
@@ -138,12 +136,15 @@ def verify_user(username, password, db_manager):
 def login_page():
     """登入頁面"""
     st.header("工作進度管理系統")
+    st.markdown("---")
     
-    # 登入表單
     with st.form("login_form"):
         username = st.text_input("帳號", placeholder="請輸入帳號")
         password = st.text_input("密碼", type="password", placeholder="請輸入密碼")
-        submit_button = st.form_submit_button("登入")
+        
+        col1, col2, col3 = st.columns([1, 1, 1])
+        with col2:
+            submit_button = st.form_submit_button("登入", use_container_width=True)
         
         if submit_button:
             if not username or not password:
@@ -959,15 +960,20 @@ def copy_previous_week_data(db_manager, current_user, selected_user=None):
 
 def main_dashboard():
     """主儀表板"""
-    # 頂部資訊
-    st.header(f"工作進度管理系統 - 歡迎，{st.session_state.current_user['full_name']}")
+    st.header("工作進度管理系統")
     
-    # 登出按鈕
-    if st.button("🚪 登出"):
-        st.session_state.logged_in = False
-        st.session_state.current_user = None
-        st.session_state.db_manager = None
-        st.rerun()
+    # 頂部資訊
+    col1, col2 = st.columns([3, 1])
+    
+    with col1:
+        st.write(f"**歡迎，{st.session_state.current_user['full_name']}**")
+    
+    with col2:
+        if st.button("🚪 登出"):
+            st.session_state.logged_in = False
+            st.session_state.current_user = None
+            st.session_state.db_manager = None
+            st.rerun()
     
     st.markdown("---")
     
@@ -986,7 +992,7 @@ def main_dashboard():
     
     with col3:
         if st.button("📋 複製上週", key="copy_previous_week_btn"):
-            st.info("複製功能開發中...")
+            copy_previous_week_data(st.session_state.db_manager, st.session_state.current_user, st.session_state.selected_user)
     
     with col4:
         week_end = st.session_state.current_week_start + timedelta(days=6)
@@ -1104,20 +1110,45 @@ def main_dashboard():
             st.info("目前沒有工作資料。")
     
     with tabs[1]:
-        st.subheader("新增工作項目")
-        st.info("新增功能開發中...")
+        add_work_item(st.session_state.db_manager, st.session_state.current_user, 
+                     st.session_state.current_week_start, st.session_state.selected_user)
     
     with tabs[2]:
-        st.subheader("編輯工作項目")
-        st.info("編輯功能開發中...")
+        edit_work_item(st.session_state.db_manager, st.session_state.current_user, st.session_state.selected_user)
     
     with tabs[3]:
-        st.subheader("刪除工作項目")
-        st.info("刪除功能開發中...")
+        delete_work_item(st.session_state.db_manager, st.session_state.current_user, st.session_state.selected_user)
     
     with tabs[4]:
         st.subheader("趨勢分析")
-        st.info("趨勢分析功能開發中...")
+        
+        # 載入所有資料進行分析
+        all_data = load_work_data(st.session_state.db_manager, st.session_state.current_user, 
+                                 st.session_state.current_week_start, st.session_state.selected_user)
+        
+        if not all_data.empty:
+            # 完成度分析
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                st.write("**完成度分析**")
+                completion_fig = px.bar(all_data, x='item', y='completion_rate',
+                                      title='各項目完成度')
+                st.plotly_chart(completion_fig, use_container_width=True)
+            
+            with col2:
+                st.write("**營收分析**")
+                revenue_fig = px.bar(all_data, x='item', y='revenue',
+                                   title='各項目營收')
+                st.plotly_chart(revenue_fig, use_container_width=True)
+            
+            # 毛利率分析
+            st.write("**毛利率分析**")
+            gross_profit_fig = px.bar(all_data, x='item', y='gross_profit',
+                                    title='各項目毛利率')
+            st.plotly_chart(gross_profit_fig, use_container_width=True)
+        else:
+            st.info("沒有資料可以進行趨勢分析。")
 
 # 初始化 session state
 init_session_state()
@@ -1127,4 +1158,3 @@ if not st.session_state.logged_in:
     login_page()
 else:
     main_dashboard()
-

@@ -5,7 +5,7 @@ import io
 from wetting_angle import calculate_wetting_angles, draw_lines_on_image
 
 # 主標題
-st.header("📐 潤濕角度量測工具")
+st.header(" 潤濕角度量測工具")
 
 st.markdown("""
 **Step 1：前往標註平台**

@@ -5,7 +5,7 @@ import chardet
 import re
 
 # 主標題
-st.header("📊 AMAT Heater Dimple 3D Viewer")
+st.header("我改 AMAT Heater Dimple 3D Viewer")
 
 def parse_chinese_format(content):
     """解析中文格式的檔案"""
