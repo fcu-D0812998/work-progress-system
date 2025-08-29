@@ -16,7 +16,6 @@ def check_nas_connection():
         today = datetime.date.today()
         roc_year = today.year - 1911
         filename = f"客品管理總表{roc_year}.{today.month:02d}.{today.day:02d}.xlsx"
-        
         # NAS 路徑
         nas_path = fr"\\192.168.1.130\nas\倉管\{filename}"
         
@@ -72,7 +71,7 @@ if target_code:
             today_str = datetime.datetime.today().strftime("%Y-%m-%d")
 
             # === 讀取範本檔案 ===
-            dispatch_path = r"C:\Users\ASUS-PC47\Desktop\測試派工單.xlsx"
+            dispatch_path = r"\\192.168.1.91\半導體\派工_Sample.xlsx"
             wb = load_workbook(dispatch_path)
             ws = wb.active
 
