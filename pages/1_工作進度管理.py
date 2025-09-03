@@ -96,6 +96,13 @@ def init_session_state():
         st.session_state.current_week_start = get_week_start(datetime.now())
     if 'selected_user' not in st.session_state:
         st.session_state.selected_user = None
+    
+    # 🔍 新增：如果已登入且是 admin，確保 selected_user 有值
+    if st.session_state.logged_in and st.session_state.current_user and st.session_state.current_user['role'] == 'admin':
+        if st.session_state.db_manager and st.session_state.selected_user is None:
+            users = get_users_list(st.session_state.db_manager)
+            if users:
+                st.session_state.selected_user = users[0]
 
 def get_week_start(date):
     """取得週開始日期（週一）"""
@@ -1003,7 +1010,12 @@ def main_dashboard():
         st.markdown("---")
         users = get_users_list(st.session_state.db_manager)
         if users:
-            selected_user = st.selectbox("選擇使用者", users, key="admin_user_select")
+            # 🔍 新增：保護 selected_user 不被意外重置
+            if st.session_state.selected_user is None:
+                st.session_state.selected_user = users[0]  # 預設選擇第一個使用者
+            
+            selected_user = st.selectbox("選擇使用者", users, key="admin_user_select", index=users.index(st.session_state.selected_user) if st.session_state.selected_user in users else 0)
+            
             if selected_user != st.session_state.selected_user:
                 st.session_state.selected_user = selected_user
                 st.rerun()
@@ -1067,6 +1079,12 @@ def main_dashboard():
                 'cost': '成本',
                 'gross_profit': '毛利率'
             })
+            
+            # 重新排列欄位順序，將截止日期移到最後
+            display_df = display_df.reindex(columns=[
+                '編號', '日期', '工作項目', '目的', '狀態', '解決方案', 
+                '完成度', '營收', '成本', '毛利率', '截止日期'
+            ])
             
             # 顯示表格
             st.dataframe(display_df, use_container_width=True, hide_index=True)
