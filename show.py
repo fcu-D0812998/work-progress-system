@@ -62,6 +62,23 @@ def create_visualization(df=None):
         'Z': df_raw['Z_Value']
     })
 
+    # 計算標準差統計資訊
+    z_mean = df['Z'].mean()
+    z_std = df['Z'].std()
+    z_min = df['Z'].min()
+    z_max = df['Z'].max()
+    
+    # 計算各標準差範圍內的資料點數量
+    within_1std = len(df[(df['Z'] >= z_mean - z_std) & (df['Z'] <= z_mean + z_std)])
+    within_2std = len(df[(df['Z'] >= z_mean - 2*z_std) & (df['Z'] <= z_mean + 2*z_std)])
+    within_3std = len(df[(df['Z'] >= z_mean - 3*z_std) & (df['Z'] <= z_mean + 3*z_std)])
+    
+    # 計算百分比
+    total_points = len(df)
+    pct_1std = (within_1std / total_points) * 100
+    pct_2std = (within_2std / total_points) * 100
+    pct_3std = (within_3std / total_points) * 100
+
     # 不使用極端值過濾，直接使用原始資料
     df_filtered = df.copy()
 
@@ -108,16 +125,16 @@ def create_visualization(df=None):
                                    for i in range(len(df_in))],
                                showlegend=False))
 
-    # 柱狀圖
-    zmin, zmax = df_in['Z'].min(), df_in['Z'].max()
-    colorscale = 'Jet'
+    # 柱狀圖 - 已註解掉連接線
+    # zmin, zmax = df_in['Z'].min(), df_in['Z'].max()
+    # colorscale = 'Jet'
 
-    for i in range(len(x_in)):
-        t = (list(z_in)[i] - zmin) / (zmax - zmin) if zmax > zmin else 0.5
-        color = sample_colorscale(colorscale, [t])[0]
-        fig.add_trace(go.Scatter3d(
-            x=[list(x_in)[i], list(x_in)[i]], y=[list(y_in)[i], list(y_in)[i]], z=[0, list(z_in)[i]],
-            mode='lines', line=dict(color=color, width=3), showlegend=False, hoverinfo='skip'))
+    # for i in range(len(x_in)):
+    #     t = (list(z_in)[i] - zmin) / (zmax - zmin) if zmax > zmin else 0.5
+    #     color = sample_colorscale(colorscale, [t])[0]
+    #     fig.add_trace(go.Scatter3d(
+    #         x=[list(x_in)[i], list(x_in)[i]], y=[list(y_in)[i], list(y_in)[i]], z=[0, list(z_in)[i]],
+    #         mode='lines', line=dict(color=color, width=3), showlegend=False, hoverinfo='skip'))
 
     fig.update_layout(
         scene=dict(

@@ -128,8 +128,129 @@ if uploaded_file is not None:
             st.error("檔案沒有資料或格式不正確")
             st.stop()
         
+        # 計算標準差統計資訊
+        z_values = df.iloc[:, 5].astype(float)  # 假設 Z 值在第6欄（索引5）
+        z_mean = z_values.mean()
+        z_std = z_values.std()
+        z_min = z_values.min()
+        z_max = z_values.max()
+        
+        # 計算各標準差範圍內的資料點數量
+        within_1std = len(z_values[(z_values >= z_mean - z_std) & (z_values <= z_mean + z_std)])
+        within_2std = len(z_values[(z_values >= z_mean - 2*z_std) & (z_values <= z_mean + 2*z_std)])
+        within_3std = len(z_values[(z_values >= z_mean - 3*z_std) & (z_values <= z_mean + 3*z_std)])
+        
+        # 計算百分比
+        total_points = len(z_values)
+        pct_1std = (within_1std / total_points) * 100
+        pct_2std = (within_2std / total_points) * 100
+        pct_3std = (within_3std / total_points) * 100
+        
+        # 顯示統計資訊
+        st.subheader("📊 統計分析")
+        col1, col2, col3, col4 = st.columns(4)
+        
+        with col1:
+            st.metric("平均值 (mm)", f"{z_mean:.4f}")
+            st.metric("標準差 (mm)", f"{z_std:.4f}")
+        
+        with col2:
+            st.metric("最小值 (mm)", f"{z_min:.4f}")
+            st.metric("最大值 (mm)", f"{z_max:.4f}")
+        
+        with col3:
+            st.metric("±1σ 範圍內", f"{within_1std}/{total_points}", f"{pct_1std:.1f}%")
+            st.metric("±2σ 範圍內", f"{within_2std}/{total_points}", f"{pct_2std:.1f}%")
+        
+        with col4:
+            st.metric("±3σ 範圍內", f"{within_3std}/{total_points}", f"{pct_3std:.1f}%")
+            st.metric("變異係數", f"{(z_std/z_mean)*100:.2f}%")
+        
+        # 標準差範圍顯示
+        st.subheader("📈 標準差範圍分析")
+        st.write(f"**±1σ 範圍**: {z_mean - z_std:.4f} ~ {z_mean + z_std:.4f} mm")
+        st.write(f"**±2σ 範圍**: {z_mean - 2*z_std:.4f} ~ {z_mean + 2*z_std:.4f} mm")
+        st.write(f"**±3σ 範圍**: {z_mean - 3*z_std:.4f} ~ {z_mean + 3*z_std:.4f} mm")
+        
+        # 閾值分析
+        st.subheader("🎯 閾值分析")
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            threshold_value = st.number_input(
+                "輸入閾值 (mm):",
+                value=0.77,
+                step=0.01,
+                format="%.4f",
+                help="輸入一個數值來分析有多少測量值在這個閾值之上或之下"
+            )
+        
+        with col2:
+            threshold_direction = st.selectbox(
+                "分析方向:",
+                ["小於等於閾值", "大於等於閾值", "等於閾值 (±0.001)"]
+            )
+        
+        # 計算閾值分析結果
+        if threshold_direction == "小於等於閾值":
+            threshold_count = len(z_values[z_values <= threshold_value])
+            threshold_pct = (threshold_count / total_points) * 100
+            st.success(f"📊 **小於等於 {threshold_value:.4f} mm 的資料點**: {threshold_count}/{total_points} 個 ({threshold_pct:.1f}%)")
+        elif threshold_direction == "大於等於閾值":
+            threshold_count = len(z_values[z_values >= threshold_value])
+            threshold_pct = (threshold_count / total_points) * 100
+            st.success(f"📊 **大於等於 {threshold_value:.4f} mm 的資料點**: {threshold_count}/{total_points} 個 ({threshold_pct:.1f}%)")
+        else:  # 等於閾值
+            threshold_count = len(z_values[abs(z_values - threshold_value) <= 0.001])
+            threshold_pct = (threshold_count / total_points) * 100
+            st.success(f"📊 **等於 {threshold_value:.4f} mm (±0.001) 的資料點**: {threshold_count}/{total_points} 個 ({threshold_pct:.1f}%)")
+        
+        # 顯示閾值範圍內的資料
+        if threshold_direction == "小於等於閾值":
+            df_threshold = df[z_values <= threshold_value]
+        elif threshold_direction == "大於等於閾值":
+            df_threshold = df[z_values >= threshold_value]
+        else:
+            df_threshold = df[abs(z_values - threshold_value) <= 0.001]
+        
+        if len(df_threshold) > 0:
+            st.write(f"**閾值範圍內的資料點**: {list(df_threshold.iloc[:, 0])}")  # 顯示點名稱
+        
+        # 標準差過濾選項
+        st.subheader("🔍 資料過濾選項")
+        filter_option = st.selectbox(
+            "選擇要顯示的資料範圍：",
+            ["顯示所有資料", "±1σ 範圍內", "±2σ 範圍內", "±3σ 範圍內", "自定義標準差倍數", f"閾值分析: {threshold_direction} {threshold_value:.4f}mm"]
+        )
+        
+        # 根據選擇過濾資料
+        if filter_option == "±1σ 範圍內":
+            df_filtered = df[(z_values >= z_mean - z_std) & (z_values <= z_mean + z_std)]
+            st.info(f"顯示 ±1σ 範圍內的資料：{len(df_filtered)}/{total_points} 個點 ({pct_1std:.1f}%)")
+        elif filter_option == "±2σ 範圍內":
+            df_filtered = df[(z_values >= z_mean - 2*z_std) & (z_values <= z_mean + 2*z_std)]
+            st.info(f"顯示 ±2σ 範圍內的資料：{len(df_filtered)}/{total_points} 個點 ({pct_2std:.1f}%)")
+        elif filter_option == "±3σ 範圍內":
+            df_filtered = df[(z_values >= z_mean - 3*z_std) & (z_values <= z_mean + 3*z_std)]
+            st.info(f"顯示 ±3σ 範圍內的資料：{len(df_filtered)}/{total_points} 個點 ({pct_3std:.1f}%)")
+        elif filter_option == "自定義標準差倍數":
+            std_multiplier = st.slider("標準差倍數", 0.1, 5.0, 2.0, 0.1)
+            df_filtered = df[(z_values >= z_mean - std_multiplier*z_std) & (z_values <= z_mean + std_multiplier*z_std)]
+            filtered_count = len(df_filtered)
+            filtered_pct = (filtered_count / total_points) * 100
+            st.info(f"顯示 ±{std_multiplier}σ 範圍內的資料：{filtered_count}/{total_points} 個點 ({filtered_pct:.1f}%)")
+        elif filter_option.startswith("閾值分析"):
+            # 使用之前計算的閾值過濾結果
+            df_filtered = df_threshold
+            filtered_count = len(df_filtered)
+            filtered_pct = (filtered_count / total_points) * 100
+            st.info(f"顯示閾值分析結果：{filtered_count}/{total_points} 個點 ({filtered_pct:.1f}%)")
+        else:
+            df_filtered = df
+            st.info(f"顯示所有資料：{total_points} 個點")
+        
         # 直接使用 show.py 的 create_visualization 函數
-        fig = show.create_visualization(df)
+        fig = show.create_visualization(df_filtered)
         
         # 使用全寬顯示圖表，並設定高度
         st.plotly_chart(fig, use_container_width=True, height=800)
