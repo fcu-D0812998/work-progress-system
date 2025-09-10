@@ -125,17 +125,6 @@ def create_visualization(df=None):
                                    for i in range(len(df_in))],
                                showlegend=False))
 
-    # 柱狀圖 - 已註解掉連接線
-    # zmin, zmax = df_in['Z'].min(), df_in['Z'].max()
-    # colorscale = 'Jet'
-
-    # for i in range(len(x_in)):
-    #     t = (list(z_in)[i] - zmin) / (zmax - zmin) if zmax > zmin else 0.5
-    #     color = sample_colorscale(colorscale, [t])[0]
-    #     fig.add_trace(go.Scatter3d(
-    #         x=[list(x_in)[i], list(x_in)[i]], y=[list(y_in)[i], list(y_in)[i]], z=[0, list(z_in)[i]],
-    #         mode='lines', line=dict(color=color, width=3), showlegend=False, hoverinfo='skip'))
-
     fig.update_layout(
         scene=dict(
             xaxis_title='X (mm)', yaxis_title='Y (mm)', zaxis_title='Z (mm)',
