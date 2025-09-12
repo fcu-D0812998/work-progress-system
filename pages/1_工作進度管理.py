@@ -1,7 +1,7 @@
 import streamlit as st
 import hashlib
 import jwt
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, date
 import psycopg2
 import pandas as pd
 import plotly.express as px
@@ -209,7 +209,7 @@ def load_work_data(db_manager, current_user, week_start, selected_user=None):
             if selected_user:
                 query = """
                 SELECT wp.id, wp.date, wp.item, wp.purpose, wp.problem, wp.status, wp.solution, wp.deadline,
-                       wp.completion_rate, wp.revenue, wp.cost, wp.gross_profit, wp.customer
+                       wp.completion_rate, wp.estimate, wp.revenue, wp.cost, wp.gross_profit, wp.customer
                 FROM work_progress wp 
                 JOIN users u ON wp.user_id = u.id 
                 WHERE u.full_name = %s
@@ -220,7 +220,7 @@ def load_work_data(db_manager, current_user, week_start, selected_user=None):
             else:
                 query = """
                 SELECT wp.id, wp.date, wp.item, wp.purpose, wp.problem, wp.status, wp.solution, wp.deadline,
-                       wp.completion_rate, wp.revenue, wp.cost, wp.gross_profit, wp.customer
+                       wp.completion_rate, wp.estimate, wp.revenue, wp.cost, wp.gross_profit, wp.customer
                 FROM work_progress wp 
                 JOIN users u ON wp.user_id = u.id 
                 WHERE wp.date >= %s AND wp.date <= %s
@@ -230,7 +230,7 @@ def load_work_data(db_manager, current_user, week_start, selected_user=None):
         else:
             query = """
             SELECT id, date, item, purpose, problem, status, solution, deadline, 
-                   completion_rate, revenue, cost, gross_profit, customer
+                   completion_rate, estimate, revenue, cost, gross_profit, customer
             FROM work_progress 
             WHERE user_id = %s 
               AND date >= %s AND date <= %s
@@ -241,7 +241,7 @@ def load_work_data(db_manager, current_user, week_start, selected_user=None):
         if result:
             df = pd.DataFrame(result, columns=[
                 'id', 'date', 'item', 'purpose', 'problem', 'status', 'solution', 'deadline',
-                'completion_rate', 'revenue', 'cost', 'gross_profit', 'customer'
+                'completion_rate', 'estimate', 'revenue', 'cost', 'gross_profit', 'customer'
             ])
             
             # 確保日期欄位為 datetime 類型
@@ -312,6 +312,7 @@ def add_work_item(db_manager, current_user, week_start, selected_user=None):
         
         with col2:
             completion_rate = st.slider("完成度 (%)", 0, 100, 0)
+            estimate = st.number_input("預估營收", min_value=0, value=0, step=1000, format="%d")
             revenue = st.number_input("營收", min_value=0, value=0, step=1000, format="%d")
             cost = st.number_input("成本", min_value=0, value=0, step=1000, format="%d")
         
@@ -357,8 +358,8 @@ def add_work_item(db_manager, current_user, week_start, selected_user=None):
             # 插入資料庫
             insert_query = """
             INSERT INTO work_progress (user_id, date, item, purpose, problem, status, solution, deadline, 
-                                     completion_rate, revenue, cost, gross_profit, customer)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                                     completion_rate, estimate, revenue, cost, gross_profit, customer)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             RETURNING id
             """
             
@@ -367,7 +368,7 @@ def add_work_item(db_manager, current_user, week_start, selected_user=None):
             
             insert_data = (
                 user_id, date, item, purpose, problem, status, solution,
-                deadline, completion_rate, revenue, cost, gross_profit_decimal, customer
+                deadline, completion_rate, estimate, revenue, cost, gross_profit_decimal, customer
             )
             
             try:
@@ -548,6 +549,12 @@ def edit_work_item(db_manager, current_user, selected_user=None):
                     else:
                         completion_value = int(float(completion_value))
                     
+                    estimate_value = item_data['estimate']
+                    if pd.isna(estimate_value):
+                        estimate_value = 0
+                    else:
+                        estimate_value = int(float(estimate_value))
+                    
                     revenue_value = item_data['revenue']
                     if pd.isna(revenue_value):
                         revenue_value = 0
@@ -561,6 +568,7 @@ def edit_work_item(db_manager, current_user, selected_user=None):
                         cost_value = int(float(cost_value))
                     
                     completion_rate = st.slider("完成度 (%)", 0, 100, completion_value)
+                    estimate = st.number_input("預估營收", min_value=0, value=estimate_value, step=1000, format="%d")
                     revenue = st.number_input("營收", min_value=0, value=revenue_value, step=1000, format="%d")
                     cost = st.number_input("成本", min_value=0, value=cost_value, step=1000, format="%d")
                 
@@ -614,13 +622,13 @@ def edit_work_item(db_manager, current_user, selected_user=None):
                     update_query = """
                     UPDATE work_progress 
                     SET date = %s, item = %s, purpose = %s, problem = %s, status = %s, solution = %s, 
-                        deadline = %s, completion_rate = %s, revenue = %s, cost = %s, gross_profit = %s, customer = %s
+                        deadline = %s, completion_rate = %s, estimate = %s, revenue = %s, cost = %s, gross_profit = %s, customer = %s
                     WHERE user_id = %s AND date = %s AND item = %s
                     """
                     
                     update_data = (
                         date, item, purpose, problem, status, solution,
-                        deadline, completion_rate, revenue, cost, gross_profit/100, customer,
+                        deadline, completion_rate, estimate, revenue, cost, gross_profit/100, customer,
                         user_id, original_date_str, original_item_str
                     )
                     
@@ -778,28 +786,74 @@ def show_revenue_trend(db_manager, item_name):
                 st.error("無法重新連線到資料庫")
                 return
         
-        # 查詢相同項目的所有營收資料
+        # 查詢相同項目的所有營收和預估營收資料
         query = """
-        SELECT date, item, revenue
+        SELECT date, item, revenue, estimate
         FROM work_progress
-        WHERE item = %s AND revenue IS NOT NULL AND revenue > 0
+        WHERE item = %s AND (revenue IS NOT NULL OR estimate IS NOT NULL)
         ORDER BY date
         """
         
         result = db_manager.execute_query(query, (item_name,))
         
         if result:
-            df = pd.DataFrame(result, columns=['date', 'item', 'revenue'])
+            df = pd.DataFrame(result, columns=['date', 'item', 'revenue', 'estimate'])
             
-            # 建立趨勢圖
-            fig = px.line(df, x='date', y='revenue', 
-                         title=f'項目: {item_name} - 營收趨勢圖',
-                         markers=True)
+            # 處理空值，將 None 轉換為 0
+            df['revenue'] = df['revenue'].fillna(0)
+            df['estimate'] = df['estimate'].fillna(0)
             
+            # 無論幾筆資料，都從0開始顯示趨勢線
+            # 取得最早日期的前3天作為起始點
+            earliest_date = df['date'].min()
+            start_date = earliest_date - timedelta(days=3)
+            
+            # 創建起始點（營收和預估營收都為0）
+            start_point = pd.DataFrame({
+                'date': [start_date],
+                'item': [item_name],
+                'revenue': [0],
+                'estimate': [0]
+            })
+            
+            # 合併起始點和實際資料
+            trend_df = pd.concat([start_point, df], ignore_index=True)
+            
+            # 建立雙線趨勢圖
+            fig = go.Figure()
+            
+            # 添加實際營收線
+            fig.add_trace(go.Scatter(
+                x=trend_df['date'],
+                y=trend_df['revenue'],
+                mode='lines+markers',
+                name='實際營收',
+                line=dict(color='blue', width=2),
+                marker=dict(size=6)
+            ))
+            
+            # 添加預估營收線
+            fig.add_trace(go.Scatter(
+                x=trend_df['date'],
+                y=trend_df['estimate'],
+                mode='lines+markers',
+                name='預估營收',
+                line=dict(color='red', width=2),
+                marker=dict(size=6)
+            ))
+            
+            # 更新圖表佈局
             fig.update_layout(
+                title=f'項目: {item_name} - 營收趨勢圖',
                 xaxis_title="日期",
                 yaxis_title="營收 (元)",
-                hovermode='x unified'
+                hovermode='x unified',
+                legend=dict(
+                    yanchor="top",
+                    y=0.99,
+                    xanchor="left",
+                    x=0.01
+                )
             )
             
             st.plotly_chart(fig, use_container_width=True)
@@ -888,7 +942,7 @@ def copy_previous_week_data(db_manager, current_user, selected_user=None):
             if selected_user:
                 query = """
                 SELECT wp.id, wp.date, wp.item, wp.purpose, wp.problem, wp.status, wp.solution, wp.deadline,
-                       wp.completion_rate, wp.revenue, wp.cost, wp.gross_profit, wp.customer
+                       wp.completion_rate, wp.estimate, wp.revenue, wp.cost, wp.gross_profit, wp.customer
                 FROM work_progress wp 
                 JOIN users u ON wp.user_id = u.id 
                 WHERE u.full_name = %s
@@ -902,7 +956,7 @@ def copy_previous_week_data(db_manager, current_user, selected_user=None):
         else:
             query = """
             SELECT id, date, item, purpose, problem, status, solution, deadline, 
-                   completion_rate, revenue, cost, gross_profit, customer
+                   completion_rate, estimate, revenue, cost, gross_profit, customer
             FROM work_progress 
             WHERE user_id = %s 
               AND date >= %s AND date <= %s
@@ -920,8 +974,20 @@ def copy_previous_week_data(db_manager, current_user, selected_user=None):
                     # 計算新的日期（保持星期幾不變，但改為當前週期）
                     original_date = row_data[1]  # date 欄位
                     if original_date:
+                        # 確保 original_date 是 date 類型
                         if hasattr(original_date, 'date'):
                             original_date = original_date.date()
+                        elif isinstance(original_date, str):
+                            # 如果是字串，嘗試解析為日期
+                            try:
+                                original_date = datetime.strptime(original_date, '%Y-%m-%d').date()
+                            except ValueError:
+                                st.error(f"無法解析日期格式：{original_date}")
+                                continue
+                        elif not isinstance(original_date, date):
+                            st.error(f"不支援的日期類型：{type(original_date)}")
+                            continue
+                        
                         # 計算原日期在上週的第幾天
                         days_diff = (original_date - previous_week_start).days
                         # 計算當前週期對應的日期
@@ -930,8 +996,8 @@ def copy_previous_week_data(db_manager, current_user, selected_user=None):
                         # 插入新資料
                         insert_query = """
                         INSERT INTO work_progress (user_id, date, item, purpose, problem, status, solution, deadline, 
-                                                 completion_rate, revenue, cost, gross_profit, customer)
-                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                                                 completion_rate, estimate, revenue, cost, gross_profit, customer)
+                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                         """
                         
                         # 取得使用者ID
@@ -944,10 +1010,22 @@ def copy_previous_week_data(db_manager, current_user, selected_user=None):
                             user_id = current_user['id']
                         
                         # 處理日期欄位
-                        deadline_date = row_data[6]  # deadline 欄位
+                        deadline_date = row_data[7]  # deadline 欄位 (索引7)
                         if deadline_date:
+                            # 確保 deadline_date 是 date 類型
                             if hasattr(deadline_date, 'date'):
                                 deadline_date = deadline_date.date()
+                            elif isinstance(deadline_date, str):
+                                # 如果是字串，嘗試解析為日期
+                                try:
+                                    deadline_date = datetime.strptime(deadline_date, '%Y-%m-%d').date()
+                                except ValueError:
+                                    st.error(f"無法解析截止日期格式：{deadline_date}")
+                                    deadline_date = new_date  # 使用新日期作為預設值
+                            elif not isinstance(deadline_date, date):
+                                st.error(f"不支援的截止日期類型：{type(deadline_date)}")
+                                deadline_date = new_date  # 使用新日期作為預設值
+                            
                             # 同樣調整截止日期
                             deadline_days_diff = (deadline_date - previous_week_start).days
                             new_deadline = st.session_state.current_week_start + timedelta(days=deadline_days_diff)
@@ -956,7 +1034,7 @@ def copy_previous_week_data(db_manager, current_user, selected_user=None):
                         
                         insert_data = (
                             user_id, new_date, row_data[2], row_data[3], row_data[4], row_data[5], row_data[6], 
-                            new_deadline, row_data[8], row_data[9], row_data[10], row_data[11], row_data[12]
+                            new_deadline, row_data[8], row_data[9], row_data[10], row_data[11], row_data[12], row_data[13]
                         )
                         
                         if db_manager.execute_query(insert_query, insert_data, fetch=False):
@@ -1066,6 +1144,7 @@ def main_dashboard():
             
             # 安全地格式化數值欄位
             display_df['completion_rate'] = display_df['completion_rate'].fillna(0).astype(str) + '%'
+            display_df['estimate'] = display_df['estimate'].fillna(0).apply(lambda x: f"{int(x):,}")
             display_df['revenue'] = display_df['revenue'].fillna(0).apply(lambda x: f"{int(x):,}")
             display_df['cost'] = display_df['cost'].fillna(0).apply(lambda x: f"{int(x):,}")
             display_df['gross_profit'] = (display_df['gross_profit'].fillna(0) * 100).apply(lambda x: f"{x:.2f}%")
@@ -1094,6 +1173,7 @@ def main_dashboard():
                 'solution': '解決方案',
                 'deadline': '截止日期',
                 'completion_rate': '完成度',
+                'estimate': '預估營收',
                 'revenue': '營收',
                 'cost': '成本',
                 'gross_profit': '毛利率',
@@ -1103,7 +1183,7 @@ def main_dashboard():
             # 重新排列欄位順序，將截止日期移到最後
             display_df = display_df.reindex(columns=[
                 '編號', '日期', '客戶', '工作項目', '目的', '問題', '狀態', '解決方案', 
-                '完成度', '營收', '成本', '毛利率', '截止日期'
+                '完成度', '預估營收', '營收', '成本', '毛利率', '截止日期'
             ])
             
             # 顯示表格
