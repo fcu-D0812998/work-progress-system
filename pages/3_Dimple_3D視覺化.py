@@ -146,6 +146,37 @@ if uploaded_file is not None:
         pct_2std = (within_2std / total_points) * 100
         pct_3std = (within_3std / total_points) * 100
         
+        # CPK 規格設定
+        st.subheader("🎯 規格設定 (CPK 計算)")
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            usl = st.number_input(
+                "規格上限 (USL):",
+                value=z_mean + 3*z_std,  # 預設為平均值+3標準差
+                step=0.001,
+                format="%.4f",
+                help="規格上限值"
+            )
+        
+        with col2:
+            lsl = st.number_input(
+                "規格下限 (LSL):",
+                value=z_mean - 3*z_std,  # 預設為平均值-3標準差
+                step=0.001,
+                format="%.4f",
+                help="規格下限值"
+            )
+        
+        # 計算 CPK
+        if usl > lsl:
+            cpk_upper = (usl - z_mean) / (3 * z_std)
+            cpk_lower = (z_mean - lsl) / (3 * z_std)
+            cpk = min(cpk_upper, cpk_lower)
+        else:
+            cpk = 0
+            st.error("規格上限必須大於規格下限")
+        
         # 顯示統計資訊
         st.subheader("📊 統計分析")
         col1, col2, col3, col4 = st.columns(4)
@@ -164,10 +195,38 @@ if uploaded_file is not None:
         
         with col4:
             st.metric("±3σ 範圍內", f"{within_3std}/{total_points}", f"{pct_3std:.1f}%")
-            st.metric("變異係數", f"{(z_std/z_mean)*100:.2f}%")
+            st.metric("CPK 指標", f"{cpk:.3f}")
+        
+        # CPK 詳細分析
+        st.subheader("📈 CPK 製程能力分析")
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            st.write(f"**規格範圍**: {lsl:.4f} ~ {usl:.4f} mm")
+            st.write(f"**規格公差**: {usl - lsl:.4f} mm")
+            st.write(f"**CPK 值**: {cpk:.3f}")
+        
+        with col2:
+            # CPK 評估
+            if cpk >= 1.67:
+                cpk_status = "優秀 (Cpk ≥ 1.67)"
+                cpk_color = "🟢"
+            elif cpk >= 1.33:
+                cpk_status = "良好 (1.33 ≤ Cpk < 1.67)"
+                cpk_color = "🟡"
+            elif cpk >= 1.0:
+                cpk_status = "可接受 (1.0 ≤ Cpk < 1.33)"
+                cpk_color = "🟠"
+            else:
+                cpk_status = "需改善 (Cpk < 1.0)"
+                cpk_color = "🔴"
+            
+            st.write(f"**製程能力**: {cpk_color} {cpk_status}")
+            st.write(f"**CPK 上限**: {cpk_upper:.3f}")
+            st.write(f"**CPK 下限**: {cpk_lower:.3f}")
         
         # 標準差範圍顯示
-        st.subheader("📈 標準差範圍分析")
+        st.subheader("📊 標準差範圍分析")
         st.write(f"**±1σ 範圍**: {z_mean - z_std:.4f} ~ {z_mean + z_std:.4f} mm")
         st.write(f"**±2σ 範圍**: {z_mean - 2*z_std:.4f} ~ {z_mean + 2*z_std:.4f} mm")
         st.write(f"**±3σ 範圍**: {z_mean - 3*z_std:.4f} ~ {z_mean + 3*z_std:.4f} mm")
