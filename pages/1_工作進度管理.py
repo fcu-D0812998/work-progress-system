@@ -209,7 +209,7 @@ def load_work_data(db_manager, current_user, week_start, selected_user=None):
             if selected_user:
                 query = """
                 SELECT wp.id, wp.date, wp.item, wp.purpose, wp.problem, wp.status, wp.solution, wp.deadline,
-                       wp.completion_rate, wp.estimate, wp.revenue, wp.cost, wp.gross_profit, wp.customer
+                       wp.completion_rate, wp.estimate, wp.revenue, wp.cost, wp.gross_profit, wp.customer, wp.phase_code
                 FROM work_progress wp 
                 JOIN users u ON wp.user_id = u.id 
                 WHERE u.full_name = %s
@@ -220,7 +220,7 @@ def load_work_data(db_manager, current_user, week_start, selected_user=None):
             else:
                 query = """
                 SELECT wp.id, wp.date, wp.item, wp.purpose, wp.problem, wp.status, wp.solution, wp.deadline,
-                       wp.completion_rate, wp.estimate, wp.revenue, wp.cost, wp.gross_profit, wp.customer
+                       wp.completion_rate, wp.estimate, wp.revenue, wp.cost, wp.gross_profit, wp.customer, wp.phase_code
                 FROM work_progress wp 
                 JOIN users u ON wp.user_id = u.id 
                 WHERE wp.date >= %s AND wp.date <= %s
@@ -230,7 +230,7 @@ def load_work_data(db_manager, current_user, week_start, selected_user=None):
         else:
             query = """
             SELECT id, date, item, purpose, problem, status, solution, deadline, 
-                   completion_rate, estimate, revenue, cost, gross_profit, customer
+                   completion_rate, estimate, revenue, cost, gross_profit, customer, phase_code
             FROM work_progress 
             WHERE user_id = %s 
               AND date >= %s AND date <= %s
@@ -241,7 +241,7 @@ def load_work_data(db_manager, current_user, week_start, selected_user=None):
         if result:
             df = pd.DataFrame(result, columns=[
                 'id', 'date', 'item', 'purpose', 'problem', 'status', 'solution', 'deadline',
-                'completion_rate', 'estimate', 'revenue', 'cost', 'gross_profit', 'customer'
+                'completion_rate', 'estimate', 'revenue', 'cost', 'gross_profit', 'customer', 'phase_code'
             ])
             
             # 確保日期欄位為 datetime 類型
@@ -294,6 +294,60 @@ def get_user_id_by_name(db_manager, user_name):
         st.error(f"取得使用者ID時發生錯誤：{e}")
         return None
 
+def get_phase_list(db_manager):
+    """取得階段列表"""
+    try:
+        # 檢查資料庫連線狀態
+        if not db_manager.conn or db_manager.conn.closed:
+            if not db_manager.connect():
+                st.error("無法重新連線到資料庫")
+                return []
+        
+        query = """
+        SELECT code, name FROM phase_list 
+        ORDER BY CASE code
+            WHEN 'P1' THEN 1
+            WHEN 'P2' THEN 2
+            WHEN 'P3' THEN 3
+            WHEN 'P4' THEN 4
+            WHEN 'P5' THEN 5
+            WHEN 'P6' THEN 6
+            WHEN 'P7' THEN 7
+            WHEN 'P8' THEN 8
+            WHEN 'P9' THEN 9
+            WHEN 'P10' THEN 10
+            ELSE 999
+        END
+        """
+        result = db_manager.execute_query(query)
+        
+        if result:
+            return [(row[0], row[1]) for row in result]
+        return []
+    except Exception as e:
+        st.error(f"載入階段列表時發生錯誤：{e}")
+        return []
+
+def get_phase_name_by_code(db_manager, phase_code):
+    """根據階段代碼取得階段名稱"""
+    try:
+        if not phase_code or pd.isna(phase_code):
+            return ""
+        
+        # 檢查資料庫連線狀態
+        if not db_manager.conn or db_manager.conn.closed:
+            if not db_manager.connect():
+                return str(phase_code)  # 如果無法連線，返回原始代碼
+        
+        query = "SELECT name FROM phase_list WHERE code = %s"
+        result = db_manager.execute_query(query, (phase_code,))
+        
+        if result and len(result) > 0:
+            return result[0][0]
+        return str(phase_code)  # 如果找不到對應名稱，返回原始代碼
+    except Exception as e:
+        return str(phase_code)  # 發生錯誤時返回原始代碼
+
 def add_work_item(db_manager, current_user, week_start, selected_user=None):
     """新增工作項目"""
     st.subheader("新增工作項目")
@@ -317,6 +371,16 @@ def add_work_item(db_manager, current_user, week_start, selected_user=None):
             cost = st.number_input("成本", min_value=0, value=0, step=1000, format="%d")
         
         solution = st.text_area("解決方案", placeholder="請輸入解決方案", height=100)
+        
+        # 階段選擇
+        phase_list = get_phase_list(db_manager)
+        if phase_list:
+            phase_options = {f"{code} - {name}": code for code, name in phase_list}
+            selected_phase_display = st.selectbox("目前階段", list(phase_options.keys()))
+            selected_phase_code = phase_options[selected_phase_display]
+        else:
+            st.warning("無法載入階段列表")
+            selected_phase_code = None
         
         # 自動計算毛利率
         if revenue > 0:
@@ -358,8 +422,8 @@ def add_work_item(db_manager, current_user, week_start, selected_user=None):
             # 插入資料庫
             insert_query = """
             INSERT INTO work_progress (user_id, date, item, purpose, problem, status, solution, deadline, 
-                                     completion_rate, estimate, revenue, cost, gross_profit, customer)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                                     completion_rate, estimate, revenue, cost, gross_profit, customer, phase_code)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             RETURNING id
             """
             
@@ -368,7 +432,7 @@ def add_work_item(db_manager, current_user, week_start, selected_user=None):
             
             insert_data = (
                 user_id, date, item, purpose, problem, status, solution,
-                deadline, completion_rate, estimate, revenue, cost, gross_profit_decimal, customer
+                deadline, completion_rate, estimate, revenue, cost, gross_profit_decimal, customer, selected_phase_code
             )
             
             try:
@@ -581,6 +645,37 @@ def edit_work_item(db_manager, current_user, selected_user=None):
                 
                 solution = st.text_area("解決方案", value=solution_value, height=100)
                 
+                # 階段選擇
+                phase_list = get_phase_list(db_manager)
+                if phase_list:
+                    # 取得當前項目的階段代碼
+                    current_phase_code = item_data.get('phase_code', '')
+                    if pd.isna(current_phase_code):
+                        current_phase_code = ''
+                    else:
+                        current_phase_code = str(current_phase_code)
+                    
+                    # 建立選項字典
+                    phase_options = {f"{code} - {name}": code for code, name in phase_list}
+                    
+                    # 找到當前階段對應的顯示文字
+                    current_phase_display = None
+                    for display, code in phase_options.items():
+                        if code == current_phase_code:
+                            current_phase_display = display
+                            break
+                    
+                    # 如果找不到對應的顯示文字，使用第一個選項
+                    if current_phase_display is None and phase_options:
+                        current_phase_display = list(phase_options.keys())[0]
+                    
+                    selected_phase_display = st.selectbox("目前階段", list(phase_options.keys()), 
+                                                        index=list(phase_options.keys()).index(current_phase_display) if current_phase_display else 0)
+                    selected_phase_code = phase_options[selected_phase_display]
+                else:
+                    st.warning("無法載入階段列表")
+                    selected_phase_code = None
+                
                 # 自動計算毛利率
                 if revenue > 0:
                     gross_profit = ((revenue - cost) / revenue) * 100
@@ -622,13 +717,13 @@ def edit_work_item(db_manager, current_user, selected_user=None):
                     update_query = """
                     UPDATE work_progress 
                     SET date = %s, item = %s, purpose = %s, problem = %s, status = %s, solution = %s, 
-                        deadline = %s, completion_rate = %s, estimate = %s, revenue = %s, cost = %s, gross_profit = %s, customer = %s
+                        deadline = %s, completion_rate = %s, estimate = %s, revenue = %s, cost = %s, gross_profit = %s, customer = %s, phase_code = %s
                     WHERE user_id = %s AND date = %s AND item = %s
                     """
                     
                     update_data = (
                         date, item, purpose, problem, status, solution,
-                        deadline, completion_rate, estimate, revenue, cost, gross_profit/100, customer,
+                        deadline, completion_rate, estimate, revenue, cost, gross_profit/100, customer, selected_phase_code,
                         user_id, original_date_str, original_item_str
                     )
                     
@@ -942,7 +1037,7 @@ def copy_previous_week_data(db_manager, current_user, selected_user=None):
             if selected_user:
                 query = """
                 SELECT wp.id, wp.date, wp.item, wp.purpose, wp.problem, wp.status, wp.solution, wp.deadline,
-                       wp.completion_rate, wp.estimate, wp.revenue, wp.cost, wp.gross_profit, wp.customer
+                       wp.completion_rate, wp.estimate, wp.revenue, wp.cost, wp.gross_profit, wp.customer, wp.phase_code
                 FROM work_progress wp 
                 JOIN users u ON wp.user_id = u.id 
                 WHERE u.full_name = %s
@@ -956,7 +1051,7 @@ def copy_previous_week_data(db_manager, current_user, selected_user=None):
         else:
             query = """
             SELECT id, date, item, purpose, problem, status, solution, deadline, 
-                   completion_rate, estimate, revenue, cost, gross_profit, customer
+                   completion_rate, estimate, revenue, cost, gross_profit, customer, phase_code
             FROM work_progress 
             WHERE user_id = %s 
               AND date >= %s AND date <= %s
@@ -996,8 +1091,8 @@ def copy_previous_week_data(db_manager, current_user, selected_user=None):
                         # 插入新資料
                         insert_query = """
                         INSERT INTO work_progress (user_id, date, item, purpose, problem, status, solution, deadline, 
-                                                 completion_rate, estimate, revenue, cost, gross_profit, customer)
-                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                                                 completion_rate, estimate, revenue, cost, gross_profit, customer, phase_code)
+                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                         """
                         
                         # 取得使用者ID
@@ -1034,7 +1129,7 @@ def copy_previous_week_data(db_manager, current_user, selected_user=None):
                         
                         insert_data = (
                             user_id, new_date, row_data[2], row_data[3], row_data[4], row_data[5], row_data[6], 
-                            new_deadline, row_data[8], row_data[9], row_data[10], row_data[11], row_data[12], row_data[13]
+                            new_deadline, row_data[8], row_data[9], row_data[10], row_data[11], row_data[12], row_data[13], row_data[14]
                         )
                         
                         if db_manager.execute_query(insert_query, insert_data, fetch=False):
@@ -1157,6 +1252,14 @@ def main_dashboard():
             display_df['solution'] = display_df['solution'].fillna('').astype(str)
             display_df['customer'] = display_df['customer'].fillna('').astype(str)
             
+            # 處理階段欄位，將代碼轉換為顯示名稱
+            if 'phase_code' in display_df.columns:
+                display_df['phase_display'] = display_df['phase_code'].apply(
+                    lambda x: get_phase_name_by_code(st.session_state.db_manager, x)
+                )
+            else:
+                display_df['phase_display'] = ''
+            
             # 移除 id 欄位，只顯示需要的欄位
             display_df = display_df.drop(columns=['id'])
             
@@ -1171,6 +1274,7 @@ def main_dashboard():
                 'problem': '問題',
                 'status': '狀態',
                 'solution': '解決方案',
+                'phase_display': '目前階段',
                 'deadline': '截止日期',
                 'completion_rate': '完成度',
                 'estimate': '預估營收',
@@ -1180,9 +1284,9 @@ def main_dashboard():
                 'customer': '客戶'
             })
             
-            # 重新排列欄位順序，將截止日期移到最後
+            # 重新排列欄位順序，在解決方案和完成度之間加入目前階段
             display_df = display_df.reindex(columns=[
-                '編號', '日期', '客戶', '工作項目', '目的', '問題', '狀態', '解決方案', 
+                '編號', '日期', '客戶', '工作項目', '目的', '問題', '狀態', '解決方案', '目前階段',
                 '完成度', '預估營收', '營收', '成本', '毛利率', '截止日期'
             ])
             
