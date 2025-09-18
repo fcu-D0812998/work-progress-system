@@ -316,6 +316,10 @@ def get_phase_list(db_manager):
             WHEN 'P8' THEN 8
             WHEN 'P9' THEN 9
             WHEN 'P10' THEN 10
+            WHEN 'P11' THEN 11
+            WHEN 'P12' THEN 12
+            WHEN 'P13' THEN 13
+            WHEN 'P14' THEN 14
             ELSE 999
         END
         """
