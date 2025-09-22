@@ -352,6 +352,38 @@ def get_phase_name_by_code(db_manager, phase_code):
     except Exception as e:
         return str(phase_code)  # 發生錯誤時返回原始代碼
 
+def calculate_week_statistics(db_manager, current_user, week_start, selected_user=None):
+    """計算該週的財務統計"""
+    try:
+        # 載入該週的工作資料
+        df = load_work_data(db_manager, current_user, week_start, selected_user)
+        
+        if df.empty:
+            return {
+                'total_estimate': 0,
+                'total_revenue': 0,
+                'total_cost': 0
+            }
+        
+        # 計算統計數值
+        total_estimate = df['estimate'].fillna(0).sum()
+        total_revenue = df['revenue'].fillna(0).sum()
+        total_cost = df['cost'].fillna(0).sum()
+        
+        return {
+            'total_estimate': int(total_estimate),
+            'total_revenue': int(total_revenue),
+            'total_cost': int(total_cost)
+        }
+        
+    except Exception as e:
+        st.error(f"計算週統計時發生錯誤：{e}")
+        return {
+            'total_estimate': 0,
+            'total_revenue': 0,
+            'total_cost': 0
+        }
+
 def add_work_item(db_manager, current_user, week_start, selected_user=None):
     """新增工作項目"""
     st.subheader("新增工作項目")
@@ -1197,6 +1229,42 @@ def main_dashboard():
     with col4:
         week_end = st.session_state.current_week_start + timedelta(days=6)
         st.write(f"**工作週期：{st.session_state.current_week_start.strftime('%m/%d')} ~ {week_end.strftime('%m/%d')}**")
+    
+    # 本週財務統計
+    st.markdown("---")
+    st.subheader("💰 本週財務統計")
+    
+    # 計算該週統計
+    stats = calculate_week_statistics(
+        st.session_state.db_manager, 
+        st.session_state.current_user, 
+        st.session_state.current_week_start, 
+        st.session_state.selected_user
+    )
+    
+    # 顯示統計指標
+    col1, col2, col3 = st.columns(3)
+    
+    with col1:
+        st.metric(
+            label="總預估營收",
+            value=f"{stats['total_estimate']:,}",
+            help="該週所有項目的預估營收總和"
+        )
+    
+    with col2:
+        st.metric(
+            label="總營收",
+            value=f"{stats['total_revenue']:,}",
+            help="該週所有項目的實際營收總和"
+        )
+    
+    with col3:
+        st.metric(
+            label="總成本",
+            value=f"{stats['total_cost']:,}",
+            help="該週所有項目的成本總和"
+        )
     
     # Admin 模式的使用者選擇
     if st.session_state.current_user['role'] == 'admin':
