@@ -320,6 +320,7 @@ def get_phase_list(db_manager):
             WHEN 'P12' THEN 12
             WHEN 'P13' THEN 13
             WHEN 'P14' THEN 14
+            WHEN 'P15' THEN 15
             ELSE 999
         END
         """
