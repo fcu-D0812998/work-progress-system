@@ -352,6 +352,98 @@ def get_phase_name_by_code(db_manager, phase_code):
     except Exception as e:
         return str(phase_code)  # 發生錯誤時返回原始代碼
 
+def calculate_month_revenue(db_manager, current_user, week_start, selected_user=None):
+    """計算該月的營收統計（根據 current_week_start 的月份判斷，SQL 去重）"""
+    try:
+        # 根據 current_week_start 的月份來判斷要查詢的月份
+        month_start = week_start.replace(day=1)
+        
+        # 計算月份結束日期
+        if month_start.month == 12:
+            next_month = month_start.replace(year=month_start.year + 1, month=1, day=1)
+        else:
+            next_month = month_start.replace(month=month_start.month + 1, day=1)
+        month_end = next_month - timedelta(days=1)
+        
+        # 檢查資料庫連線狀態
+        if not db_manager.conn or db_manager.conn.closed:
+            if not db_manager.connect():
+                st.error("無法重新連線到資料庫")
+                return {
+                    'total_estimate': 0,
+                    'total_revenue': 0,
+                    'total_cost': 0
+                }
+        
+        # 使用 SQL 去重查詢該月的營收資料
+        if current_user['role'] == 'admin':
+            if selected_user:
+                query = """
+                SELECT wp.estimate, wp.revenue, wp.cost
+                FROM (
+                    SELECT wp.estimate, wp.revenue, wp.cost,
+                           ROW_NUMBER() OVER (PARTITION BY wp.item ORDER BY wp.date DESC) as rn
+                    FROM work_progress wp 
+                    JOIN users u ON wp.user_id = u.id 
+                    WHERE u.full_name = %s
+                      AND wp.date >= %s AND wp.date <= %s
+                ) wp
+                WHERE wp.rn = 1
+                """
+                result = db_manager.execute_query(query, (selected_user, month_start, month_end))
+            else:
+                query = """
+                SELECT wp.estimate, wp.revenue, wp.cost
+                FROM (
+                    SELECT wp.estimate, wp.revenue, wp.cost,
+                           ROW_NUMBER() OVER (PARTITION BY wp.item ORDER BY wp.date DESC) as rn
+                    FROM work_progress wp 
+                    JOIN users u ON wp.user_id = u.id 
+                    WHERE wp.date >= %s AND wp.date <= %s
+                ) wp
+                WHERE wp.rn = 1
+                """
+                result = db_manager.execute_query(query, (month_start, month_end))
+        else:
+            query = """
+            SELECT estimate, revenue, cost
+            FROM (
+                SELECT estimate, revenue, cost,
+                       ROW_NUMBER() OVER (PARTITION BY item ORDER BY date DESC) as rn
+                FROM work_progress 
+                WHERE user_id = %s 
+                  AND date >= %s AND date <= %s
+            ) wp
+            WHERE rn = 1
+            """
+            result = db_manager.execute_query(query, (current_user['id'], month_start, month_end))
+        
+        if result:
+            # 計算統計數值
+            total_estimate = sum(row[0] or 0 for row in result)
+            total_revenue = sum(row[1] or 0 for row in result)
+            total_cost = sum(row[2] or 0 for row in result)
+            
+            return {
+                'total_estimate': int(total_estimate),
+                'total_revenue': int(total_revenue),
+                'total_cost': int(total_cost)
+            }
+        else:
+            return {
+                'total_estimate': 0,
+                'total_revenue': 0,
+                'total_cost': 0
+            }
+        
+    except Exception as e:
+        st.error(f"計算月營收統計時發生錯誤：{e}")
+        return {
+            'total_estimate': 0,
+            'total_revenue': 0,
+            'total_cost': 0
+        }
+
 def calculate_week_statistics(db_manager, current_user, week_start, selected_user=None):
     """計算該週的財務統計"""
     try:
@@ -1230,41 +1322,41 @@ def main_dashboard():
         week_end = st.session_state.current_week_start + timedelta(days=6)
         st.write(f"**工作週期：{st.session_state.current_week_start.strftime('%m/%d')} ~ {week_end.strftime('%m/%d')}**")
     
-    # 本週財務統計
-    st.markdown("---")
-    st.subheader("💰 本週財務統計")
+    # 月度營收統計
+    st.subheader(f"💰 {st.session_state.current_week_start.strftime('%Y年%m月')}營收統計")
     
-    # 計算該週統計
-    stats = calculate_week_statistics(
+    # 計算該月營收統計
+    month_revenue = calculate_month_revenue(
         st.session_state.db_manager, 
         st.session_state.current_user, 
         st.session_state.current_week_start, 
         st.session_state.selected_user
     )
     
-    # 顯示統計指標
+    # 顯示月度營收統計指標
     col1, col2, col3 = st.columns(3)
     
     with col1:
         st.metric(
             label="總預估營收",
-            value=f"{stats['total_estimate']:,}",
-            help="該週所有項目的預估營收總和"
+            value=f"{month_revenue['total_estimate']:,}",
+            help="該月所有項目的預估營收總和（去重後）"
         )
     
     with col2:
         st.metric(
             label="總營收",
-            value=f"{stats['total_revenue']:,}",
-            help="該週所有項目的實際營收總和"
+            value=f"{month_revenue['total_revenue']:,}",
+            help="該月所有項目的實際營收總和（去重後）"
         )
     
     with col3:
         st.metric(
             label="總成本",
-            value=f"{stats['total_cost']:,}",
-            help="該週所有項目的成本總和"
+            value=f"{month_revenue['total_cost']:,}",
+            help="該月所有項目的成本總和（去重後）"
         )
+    
     
     # Admin 模式的使用者選擇
     if st.session_state.current_user['role'] == 'admin':
