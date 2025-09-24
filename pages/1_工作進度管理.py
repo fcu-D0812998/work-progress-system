@@ -425,16 +425,24 @@ def calculate_month_revenue(db_manager, current_user, week_start, selected_user=
             total_revenue = sum(row[1] or 0 for row in result)
             total_cost = sum(row[2] or 0 for row in result)
             
+            # 計算毛利率
+            if total_revenue > 0:
+                gross_profit_margin = ((total_revenue - total_cost) / total_revenue) * 100
+            else:
+                gross_profit_margin = 0.0
+            
             return {
                 'total_estimate': int(total_estimate),
                 'total_revenue': int(total_revenue),
-                'total_cost': int(total_cost)
+                'total_cost': int(total_cost),
+                'gross_profit_margin': round(gross_profit_margin, 2)
             }
         else:
             return {
                 'total_estimate': 0,
                 'total_revenue': 0,
-                'total_cost': 0
+                'total_cost': 0,
+                'gross_profit_margin': 0.0
             }
         
     except Exception as e:
@@ -442,7 +450,8 @@ def calculate_month_revenue(db_manager, current_user, week_start, selected_user=
         return {
             'total_estimate': 0,
             'total_revenue': 0,
-            'total_cost': 0
+            'total_cost': 0,
+            'gross_profit_margin': 0.0
         }
 
 def calculate_week_statistics(db_manager, current_user, week_start, selected_user=None):
@@ -1335,7 +1344,7 @@ def main_dashboard():
     )
     
     # 顯示月度營收統計指標
-    col1, col2, col3 = st.columns(3)
+    col1, col2, col3, col4 = st.columns(4)
     
     with col1:
         st.metric(
@@ -1356,6 +1365,13 @@ def main_dashboard():
             label="總成本",
             value=f"{month_revenue['total_cost']:,}",
             help="該月所有項目的成本總和（去重後）"
+        )
+    
+    with col4:
+        st.metric(
+            label="毛利率",
+            value=f"{month_revenue['gross_profit_margin']:.2f}%",
+            help="該月整體毛利率（(總營收-總成本)/總營收*100）"
         )
     
     
