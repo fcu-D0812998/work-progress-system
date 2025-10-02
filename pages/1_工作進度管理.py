@@ -208,7 +208,7 @@ def load_work_data(db_manager, current_user, week_start, selected_user=None):
         if current_user['role'] == 'admin':
             if selected_user:
                 query = """
-                SELECT wp.id, wp.date, wp.project_code, wp.usage_status, wp.release_form, wp.factory, wp.username, wp.item, wp.purpose, wp.problem, wp.status, wp.solution, wp.deadline,
+                SELECT wp.id, wp.date, wp.usage_status, wp.release_form, wp.factory, wp.username, wp.item, wp.purpose, wp.problem, wp.status, wp.solution, wp.deadline,
                        wp.completion_rate, wp.estimate, wp.revenue, wp.cost, wp.gross_profit, wp.customer, wp.phase_code
                 FROM work_progress wp 
                 JOIN users u ON wp.user_id = u.id 
@@ -219,7 +219,7 @@ def load_work_data(db_manager, current_user, week_start, selected_user=None):
                 result = db_manager.execute_query(query, (selected_user, week_start, week_end))
             else:
                 query = """
-                SELECT wp.id, wp.date, wp.project_code, wp.usage_status, wp.release_form, wp.factory, wp.username, wp.item, wp.purpose, wp.problem, wp.status, wp.solution, wp.deadline,
+                SELECT wp.id, wp.date, wp.usage_status, wp.release_form, wp.factory, wp.username, wp.item, wp.purpose, wp.problem, wp.status, wp.solution, wp.deadline,
                        wp.completion_rate, wp.estimate, wp.revenue, wp.cost, wp.gross_profit, wp.customer, wp.phase_code
                 FROM work_progress wp 
                 JOIN users u ON wp.user_id = u.id 
@@ -229,7 +229,7 @@ def load_work_data(db_manager, current_user, week_start, selected_user=None):
                 result = db_manager.execute_query(query, (week_start, week_end))
         else:
             query = """
-            SELECT id, date, project_code, usage_status, release_form, factory, username, item, purpose, problem, status, solution, deadline, 
+            SELECT id, date, usage_status, release_form, factory, username, item, purpose, problem, status, solution, deadline, 
                    completion_rate, estimate, revenue, cost, gross_profit, customer, phase_code
             FROM work_progress 
             WHERE user_id = %s 
@@ -240,7 +240,7 @@ def load_work_data(db_manager, current_user, week_start, selected_user=None):
         
         if result:
             df = pd.DataFrame(result, columns=[
-                'id', 'date', 'project_code', 'usage_status', 'release_form', 'factory', 'username', 'item', 'purpose', 'problem', 'status', 'solution', 'deadline',
+                'id', 'date', 'usage_status', 'release_form', 'factory', 'username', 'item', 'purpose', 'problem', 'status', 'solution', 'deadline',
                 'completion_rate', 'estimate', 'revenue', 'cost', 'gross_profit', 'customer', 'phase_code'
             ])
             
@@ -524,7 +524,6 @@ def add_work_item(db_manager, current_user, week_start, selected_user=None):
         
         with col1:
             date = st.date_input("日期", value=week_start)
-            project_code = st.text_input("專案編號", placeholder="請輸入專案編號")
             usage_status = st.selectbox("使用狀況", ["", "下機品", "新品"], help="選擇使用狀況")
             release_form = st.text_input("放行單", placeholder="請輸入放行單")
             factory = st.text_input("廠區", placeholder="請輸入廠區")
@@ -598,9 +597,9 @@ def add_work_item(db_manager, current_user, week_start, selected_user=None):
             
             # 插入資料庫
             insert_query = """
-            INSERT INTO work_progress (user_id, date, project_code, usage_status, release_form, factory, username, item, purpose, problem, status, solution, deadline, 
+            INSERT INTO work_progress (user_id, date, usage_status, release_form, factory, username, item, purpose, problem, status, solution, deadline, 
                                      completion_rate, estimate, revenue, cost, gross_profit, customer, phase_code)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             RETURNING id
             """
             
@@ -608,7 +607,7 @@ def add_work_item(db_manager, current_user, week_start, selected_user=None):
             gross_profit_decimal = gross_profit / 100 if gross_profit > 0 else 0.0
             
             insert_data = (
-                user_id, date, project_code, usage_status, release_form, factory, username, item, purpose, problem, status, solution,
+                user_id, date, usage_status, release_form, factory, username, item, purpose, problem, status, solution,
                 deadline, completion_rate, estimate, revenue, cost, gross_profit_decimal, customer, selected_phase_code
             )
             
@@ -745,12 +744,6 @@ def edit_work_item(db_manager, current_user, selected_user=None):
                     date = st.date_input("日期", value=date_value)
                     
                     # 安全地處理新欄位
-                    project_code_value = item_data['project_code']
-                    if pd.isna(project_code_value):
-                        project_code_value = ""
-                    else:
-                        project_code_value = str(project_code_value)
-                    
                     usage_status_value = item_data['usage_status']
                     if pd.isna(usage_status_value):
                         usage_status_value = ""
@@ -806,7 +799,6 @@ def edit_work_item(db_manager, current_user, selected_user=None):
                     else:
                         status_value = str(status_value)
                     
-                    project_code = st.text_input("專案編號", value=project_code_value)
                     usage_status = st.selectbox("使用狀況", ["", "下機品", "新品"], index=["", "下機品", "新品"].index(usage_status_value) if usage_status_value in ["", "下機品", "新品"] else 0, help="選擇使用狀況")
                     release_form = st.text_input("放行單", value=release_form_value)
                     factory = st.text_input("廠區", value=factory_value)
@@ -937,13 +929,13 @@ def edit_work_item(db_manager, current_user, selected_user=None):
                     # 更新資料庫
                     update_query = """
                     UPDATE work_progress 
-                    SET date = %s, project_code = %s, usage_status = %s, release_form = %s, factory = %s, username = %s, item = %s, purpose = %s, problem = %s, status = %s, solution = %s, 
+                    SET date = %s, usage_status = %s, release_form = %s, factory = %s, username = %s, item = %s, purpose = %s, problem = %s, status = %s, solution = %s, 
                         deadline = %s, completion_rate = %s, estimate = %s, revenue = %s, cost = %s, gross_profit = %s, customer = %s, phase_code = %s
                     WHERE user_id = %s AND date = %s AND item = %s
                     """
                     
                     update_data = (
-                        date, project_code, usage_status, release_form, factory, username, item, purpose, problem, status, solution,
+                        date, usage_status, release_form, factory, username, item, purpose, problem, status, solution,
                         deadline, completion_rate, estimate, revenue, cost, gross_profit/100, customer, selected_phase_code,
                         user_id, original_date_str, original_item_str
                     )
@@ -1257,7 +1249,7 @@ def copy_previous_week_data(db_manager, current_user, selected_user=None):
         if current_user['role'] == 'admin':
             if selected_user:
                 query = """
-                SELECT wp.id, wp.date, wp.project_code, wp.usage_status, wp.release_form, wp.factory, wp.username, wp.item, wp.purpose, wp.problem, wp.status, wp.solution, wp.deadline,
+                SELECT wp.id, wp.date, wp.usage_status, wp.release_form, wp.factory, wp.username, wp.item, wp.purpose, wp.problem, wp.status, wp.solution, wp.deadline,
                        wp.completion_rate, wp.estimate, wp.revenue, wp.cost, wp.gross_profit, wp.customer, wp.phase_code
                 FROM work_progress wp 
                 JOIN users u ON wp.user_id = u.id 
@@ -1271,7 +1263,7 @@ def copy_previous_week_data(db_manager, current_user, selected_user=None):
                 return
         else:
             query = """
-            SELECT id, date, project_code, usage_status, release_form, factory, username, item, purpose, problem, status, solution, deadline, 
+            SELECT id, date, usage_status, release_form, factory, username, item, purpose, problem, status, solution, deadline, 
                    completion_rate, estimate, revenue, cost, gross_profit, customer, phase_code
             FROM work_progress 
             WHERE user_id = %s 
@@ -1311,9 +1303,9 @@ def copy_previous_week_data(db_manager, current_user, selected_user=None):
                         
                         # 插入新資料
                         insert_query = """
-                        INSERT INTO work_progress (user_id, date, project_code, usage_status, release_form, factory, username, item, purpose, problem, status, solution, deadline, 
+                        INSERT INTO work_progress (user_id, date, usage_status, release_form, factory, username, item, purpose, problem, status, solution, deadline, 
                                                  completion_rate, estimate, revenue, cost, gross_profit, customer, phase_code)
-                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                         """
                         
                         # 取得使用者ID
@@ -1326,7 +1318,7 @@ def copy_previous_week_data(db_manager, current_user, selected_user=None):
                             user_id = current_user['id']
                         
                         # 處理日期欄位
-                        deadline_date = row_data[12]  # deadline 欄位 (索引12，因為前面新增了5個欄位)
+                        deadline_date = row_data[11]  # deadline 欄位 (索引11，因為前面有4個欄位)
                         if deadline_date:
                             # 確保 deadline_date 是 date 類型
                             if hasattr(deadline_date, 'date'):
@@ -1349,18 +1341,18 @@ def copy_previous_week_data(db_manager, current_user, selected_user=None):
                             new_deadline = new_date
                         
                         # 處理階段代碼，如果是空的則設定為 P1
-                        phase_code = row_data[19] if row_data[19] and str(row_data[19]).strip() != '' else 'P1'
+                        phase_code = row_data[18] if row_data[18] and str(row_data[18]).strip() != '' else 'P1'
                         
                         insert_data = (
-                            user_id, new_date, row_data[2], row_data[3], row_data[4], row_data[5], row_data[6], row_data[7], row_data[8], row_data[9], row_data[10], row_data[11], row_data[12], 
-                            new_deadline, row_data[13], row_data[14], row_data[15], row_data[16], row_data[17], row_data[18], phase_code
+                            user_id, new_date, row_data[2], row_data[3], row_data[4], row_data[5], row_data[6], row_data[7], row_data[8], row_data[9], row_data[10], row_data[11], 
+                            new_deadline, row_data[12], row_data[13], row_data[14], row_data[15], row_data[16], row_data[17], phase_code
                         )
                         
                         if db_manager.execute_query(insert_query, insert_data, fetch=False):
                             success_count += 1
-                            st.info(f"已複製第 {i+1} 筆資料：{row_data[7]} ({new_date.strftime('%Y-%m-%d')})")
+                            st.info(f"已複製第 {i+1} 筆資料：{row_data[6]} ({new_date.strftime('%Y-%m-%d')})")
                         else:
-                            st.error(f"複製第 {i+1} 筆資料失敗：{row_data[7]}")
+                            st.error(f"複製第 {i+1} 筆資料失敗：{row_data[6]}")
                 
                 except Exception as row_error:
                     st.error(f"處理第 {i+1} 筆資料時發生錯誤：{str(row_error)}")
@@ -1515,7 +1507,6 @@ def main_dashboard():
             display_df['gross_profit'] = (display_df['gross_profit'].fillna(0) * 100).apply(lambda x: f"{x:.2f}%")
             
             # 安全地處理新欄位
-            display_df['project_code'] = display_df['project_code'].fillna('').astype(str)
             display_df['usage_status'] = display_df['usage_status'].fillna('').astype(str)
             display_df['release_form'] = display_df['release_form'].fillna('').astype(str)
             display_df['factory'] = display_df['factory'].fillna('').astype(str)
@@ -1546,7 +1537,6 @@ def main_dashboard():
             # 重新命名欄位
             display_df = display_df.rename(columns={
                 'date': '日期',
-                'project_code': '專案編號',
                 'usage_status': '使用狀況',
                 'release_form': '放行單',
                 'factory': '廠區',
@@ -1566,9 +1556,9 @@ def main_dashboard():
                 'customer': '客戶'
             })
             
-            # 重新排列欄位順序，新欄位放在日期和客戶之間
+            # 重新排列欄位順序，按指定順序排列
             display_df = display_df.reindex(columns=[
-                '編號', '日期', '專案編號', '使用狀況', '放行單', '廠區', 'User', '客戶', '工作項目', '目的', '問題', '狀態', '解決方案', '目前階段',
+                '編號', '日期', '放行單', '使用狀況', '客戶', '廠區', 'User', '工作項目', '目的', '問題', '狀態', '解決方案', '目前階段',
                 '完成度', '預估營收', '營收', '成本', '毛利率', '截止日期'
             ])
             
