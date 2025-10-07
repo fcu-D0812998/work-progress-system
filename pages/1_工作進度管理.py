@@ -1344,7 +1344,7 @@ def copy_previous_week_data(db_manager, current_user, selected_user=None):
                         phase_code = row_data[18] if row_data[18] and str(row_data[18]).strip() != '' else 'P1'
                         
                         insert_data = (
-                            user_id, new_date, row_data[2], row_data[3], row_data[4], row_data[5], row_data[6], row_data[7], row_data[8], row_data[9], row_data[10], row_data[11], 
+                            user_id, new_date, row_data[2], row_data[3], row_data[4], row_data[5], row_data[6], row_data[7], row_data[8], row_data[9], row_data[10], 
                             new_deadline, row_data[12], row_data[13], row_data[14], row_data[15], row_data[16], row_data[17], phase_code
                         )
                         
