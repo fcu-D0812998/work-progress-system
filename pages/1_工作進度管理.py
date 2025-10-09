@@ -97,6 +97,16 @@ def init_session_state():
     if 'selected_user' not in st.session_state:
         st.session_state.selected_user = None
     
+    # 初始化欄位順序設定（預設順序）
+    if 'column_order' not in st.session_state:
+        st.session_state.column_order = [
+            '編號', '日期', '放行單', '使用狀況', '客戶', '廠區', 'User', '工作項目', 
+            '目的', '問題', '狀態', '解決方案', '目前階段', '完成度', '預估營收', 
+            '營收', '成本', '毛利率', '截止日期'
+        ]
+    if 'use_custom_order' not in st.session_state:
+        st.session_state.use_custom_order = False
+    
     # 🔍 新增：如果已登入且是 admin，確保 selected_user 有值
     if st.session_state.logged_in and st.session_state.current_user and st.session_state.current_user['role'] == 'admin':
         if st.session_state.db_manager and st.session_state.selected_user is None:
@@ -1480,6 +1490,109 @@ def main_dashboard():
     tabs = st.tabs(tab_names)
     
     with tabs[0]:
+        # 欄位順序自訂區域
+        with st.expander("🔧 自訂欄位順序", expanded=False):
+            st.info("💡 提示：選擇要顯示的欄位，然後使用上移/下移按鈕調整順序")
+            
+            # 預設所有欄位
+            all_columns = [
+                '編號', '日期', '放行單', '使用狀況', '客戶', '廠區', 'User', '工作項目', 
+                '目的', '問題', '狀態', '解決方案', '目前階段', '完成度', '預估營收', 
+                '營收', '成本', '毛利率', '截止日期'
+            ]
+            
+            # 欄位選擇器
+            selected_columns = st.multiselect(
+                "選擇要顯示的欄位",
+                options=all_columns,
+                default=st.session_state.column_order if st.session_state.use_custom_order else all_columns,
+                help="選擇要顯示的欄位，取消勾選可隱藏欄位"
+            )
+            
+            # 如果有選擇欄位，顯示順序調整工具
+            if selected_columns:
+                st.write("**調整欄位順序：**")
+                
+                col_select, col_up, col_down = st.columns([3, 1, 1])
+                
+                with col_select:
+                    if len(selected_columns) > 1:
+                        selected_field = st.selectbox(
+                            "選擇要調整的欄位",
+                            options=selected_columns,
+                            key="field_to_move"
+                        )
+                    else:
+                        st.info("只有一個欄位，無需調整順序")
+                        selected_field = None
+                
+                if len(selected_columns) > 1 and selected_field:
+                    current_index = selected_columns.index(selected_field)
+                    
+                    with col_up:
+                        if st.button("⬆️ 上移", use_container_width=True, disabled=(current_index == 0)):
+                            # 交換位置
+                            selected_columns[current_index], selected_columns[current_index - 1] = \
+                                selected_columns[current_index - 1], selected_columns[current_index]
+                            st.session_state.column_order = selected_columns
+                            st.session_state.use_custom_order = True
+                            st.rerun()
+                    
+                    with col_down:
+                        if st.button("⬇️ 下移", use_container_width=True, disabled=(current_index == len(selected_columns) - 1)):
+                            # 交換位置
+                            selected_columns[current_index], selected_columns[current_index + 1] = \
+                                selected_columns[current_index + 1], selected_columns[current_index]
+                            st.session_state.column_order = selected_columns
+                            st.session_state.use_custom_order = True
+                            st.rerun()
+                
+                # 顯示目前順序
+                st.write("**目前欄位順序：**")
+                st.write(" → ".join(selected_columns))
+            
+            st.markdown("---")
+            
+            # 控制按鈕
+            col1, col2, col3, col4 = st.columns(4)
+            
+            with col1:
+                if st.button("✅ 套用", use_container_width=True):
+                    if selected_columns:
+                        st.session_state.column_order = selected_columns
+                        st.session_state.use_custom_order = True
+                        st.success("已套用自訂欄位順序！")
+                        st.rerun()
+                    else:
+                        st.warning("請至少選擇一個欄位")
+            
+            with col2:
+                if st.button("🔄 重置", use_container_width=True):
+                    st.session_state.column_order = all_columns
+                    st.session_state.use_custom_order = False
+                    st.success("已重置為預設順序！")
+                    st.rerun()
+            
+            with col3:
+                if st.button("☑️ 全選", use_container_width=True):
+                    st.session_state.column_order = all_columns
+                    st.session_state.use_custom_order = True
+                    st.rerun()
+            
+            with col4:
+                if st.button("☐ 全不選", use_container_width=True):
+                    st.session_state.column_order = []
+                    st.session_state.use_custom_order = True
+                    st.rerun()
+            
+            # 顯示目前狀態
+            if st.session_state.use_custom_order:
+                st.caption(f"✓ 目前使用自訂順序，顯示 {len(st.session_state.column_order)} 個欄位")
+            else:
+                st.caption(f"ℹ️ 目前使用預設順序，顯示 {len(all_columns)} 個欄位")
+        
+        st.markdown("---")
+        
         # 載入並顯示工作資料
         df = load_work_data(st.session_state.db_manager, st.session_state.current_user, 
                            st.session_state.current_week_start, st.session_state.selected_user)
@@ -1556,11 +1669,20 @@ def main_dashboard():
                 'customer': '客戶'
             })
             
-            # 重新排列欄位順序，按指定順序排列
-            display_df = display_df.reindex(columns=[
-                '編號', '日期', '放行單', '使用狀況', '客戶', '廠區', 'User', '工作項目', '目的', '問題', '狀態', '解決方案', '目前階段',
-                '完成度', '預估營收', '營收', '成本', '毛利率', '截止日期'
-            ])
+            # 重新排列欄位順序，根據使用者設定或預設順序
+            # 只保留實際存在的欄位（避免錯誤）
+            available_columns = [col for col in st.session_state.column_order if col in display_df.columns]
+            
+            if available_columns:
+                display_df = display_df.reindex(columns=available_columns)
+            else:
+                # 如果沒有可用欄位，使用預設順序
+                default_order = [
+                    '編號', '日期', '放行單', '使用狀況', '客戶', '廠區', 'User', '工作項目', '目的', '問題', '狀態', '解決方案', '目前階段',
+                    '完成度', '預估營收', '營收', '成本', '毛利率', '截止日期'
+                ]
+                available_columns = [col for col in default_order if col in display_df.columns]
+                display_df = display_df.reindex(columns=available_columns)
             
             # 顯示表格
             st.dataframe(display_df, use_container_width=True, hide_index=True)
