@@ -722,13 +722,19 @@ def edit_work_item(db_manager, current_user, selected_user=None):
         st.warning("目前沒有資料可以編輯。")
         return
     
-    # 選擇要編輯的項目
-    if 'item' in df.columns:
-        selected_item = st.selectbox("選擇要編輯的項目", df['item'].tolist())
+    # 選擇要編輯的項目 - 改用 ID 和更多資訊來識別
+    if 'id' in df.columns and 'item' in df.columns:
+        # 創建顯示選項，包含 ID、日期和項目名稱
+        df['display_option'] = df.apply(lambda row: f"ID:{row['id']} | {row['date'].strftime('%m/%d')} | {row['item']}", axis=1)
         
-        if selected_item:
-            # 取得選中的資料
-            item_data = df[df['item'] == selected_item].iloc[0]
+        selected_display = st.selectbox("選擇要編輯的項目", df['display_option'].tolist())
+        
+        if selected_display:
+            # 根據顯示選項找到對應的資料
+            selected_row = df[df['display_option'] == selected_display]
+            if not selected_row.empty:
+                item_data = selected_row.iloc[0]
+                selected_id = item_data['id']  # 取得主鍵 ID
             
             with st.form("edit_work_form"):
                 col1, col2 = st.columns(2)
@@ -932,38 +938,29 @@ def edit_work_item(db_manager, current_user, selected_user=None):
                     else:
                         user_id = current_user['id']
                     
-                    # 取得原始日期（用於識別要修改的記錄）
-                    original_date_str = item_data['date'].strftime('%Y-%m-%d') if hasattr(item_data['date'], 'strftime') else str(item_data['date'])
-                    original_item_str = str(item_data['item'])
-                    
-                    # 更新資料庫
+                    # 使用主鍵 ID 來更新記錄
                     update_query = """
                     UPDATE work_progress 
                     SET date = %s, usage_status = %s, release_form = %s, factory = %s, username = %s, item = %s, purpose = %s, problem = %s, status = %s, solution = %s, 
                         deadline = %s, completion_rate = %s, estimate = %s, revenue = %s, cost = %s, gross_profit = %s, customer = %s, phase_code = %s
-                    WHERE user_id = %s AND date = %s AND item = %s
+                    WHERE id = %s
                     """
                     
                     update_data = (
                         date, usage_status, release_form, factory, username, item, purpose, problem, status, solution,
                         deadline, completion_rate, estimate, revenue, cost, gross_profit/100, customer, selected_phase_code,
-                        user_id, original_date_str, original_item_str
+                        selected_id  # 使用主鍵 ID
                     )
                     
                     if db_manager.execute_query(update_query, update_data, fetch=False):
                         # 處理圖片上傳
                         if uploaded_files:
-                            # 先找到對應的工作記錄ID
-                            work_progress_id = find_work_progress_id(db_manager, user_id, original_date_str, original_item_str)
-                            if work_progress_id:
-                                # 直接上傳新圖片（不刪除舊圖片）
-                                success_count = upload_images_to_database(db_manager, work_progress_id, uploaded_files)
-                                if success_count > 0:
-                                    st.success(f"工作項目已成功更新！並新增了 {success_count} 張圖片。")
-                                else:
-                                    st.success("工作項目已成功更新！但圖片上傳失敗。")
+                            # 直接使用 selected_id 作為 work_progress_id
+                            success_count = upload_images_to_database(db_manager, selected_id, uploaded_files)
+                            if success_count > 0:
+                                st.success(f"工作項目已成功更新！並新增了 {success_count} 張圖片。")
                             else:
-                                st.success("工作項目已成功更新！但無法找到記錄ID，圖片上傳失敗。")
+                                st.success("工作項目已成功更新！但圖片上傳失敗。")
                         else:
                             st.success("工作項目已成功更新！")
                         
@@ -1018,12 +1015,20 @@ def delete_work_item(db_manager, current_user, selected_user=None):
         st.warning("目前沒有資料可以刪除。")
         return
     
-    # 選擇要刪除的項目
-    if 'item' in df.columns:
-        selected_item = st.selectbox("選擇要刪除的項目", df['item'].tolist(), key="delete_select")
+    # 選擇要刪除的項目 - 改用 ID 和更多資訊來識別
+    if 'id' in df.columns and 'item' in df.columns:
+        # 創建顯示選項，包含 ID、日期和項目名稱
+        df['display_option'] = df.apply(lambda row: f"ID:{row['id']} | {row['date'].strftime('%m/%d')} | {row['item']}", axis=1)
         
-        if selected_item:
-            item_data = df[df['item'] == selected_item].iloc[0]
+        selected_display = st.selectbox("選擇要刪除的項目", df['display_option'].tolist(), key="delete_select")
+        
+        if selected_display:
+            # 根據顯示選項找到對應的資料
+            selected_row = df[df['display_option'] == selected_display]
+            if not selected_row.empty:
+                item_data = selected_row.iloc[0]
+                selected_id = item_data['id']  # 取得主鍵 ID
+                selected_item = item_data['item']  # 取得項目名稱用於顯示
             
             st.warning(f"確定要刪除項目「{selected_item}」嗎？")
             
@@ -1031,53 +1036,15 @@ def delete_work_item(db_manager, current_user, selected_user=None):
             with col1:
                 if st.button("確認刪除", type="primary"):
                     try:
-                        # 取得選中項目的資料
-                        date_str = item_data['date'].strftime('%Y-%m-%d') if hasattr(item_data['date'], 'strftime') else str(item_data['date'])
-                        item_str = str(item_data['item'])
-                        
-                        # 將日期字串轉換為日期物件（只使用日期部分）
-                        try:
-                            # 解析日期字串 (格式: YYYY-MM-DD)
-                            date_obj = datetime.strptime(date_str, '%Y-%m-%d').date()
-                        except ValueError:
-                            st.error(f"日期格式錯誤：{date_str}")
-                            return
-                        
-                        # 根據使用者角色決定刪除條件
-                        if current_user['role'] == 'admin':
-                            # Admin 模式：需要指定使用者
-                            if not selected_user:
-                                st.error("請先選擇要刪除的使用者。")
-                                return
-                            
-                            # 取得使用者ID
-                            user_id = get_user_id_by_name(db_manager, selected_user)
-                            if not user_id:
-                                st.error("無法取得使用者ID。")
-                                return
-                            
-                            # 刪除查詢（Admin 模式）
-                            delete_query = """
-                            DELETE FROM work_progress 
-                            WHERE user_id = %s 
-                              AND date = %s 
-                              AND item = %s
-                            """
-                            delete_params = (user_id, date_obj, item_str)
-                        else:
-                            # 一般使用者模式：只能刪除自己的資料
-                            delete_query = """
-                            DELETE FROM work_progress 
-                            WHERE user_id = %s 
-                              AND date = %s 
-                              AND item = %s
-                            """
-                            delete_params = (current_user['id'], date_obj, item_str)
+                        # 使用主鍵 ID 來刪除記錄
+                        delete_query = """
+                        DELETE FROM work_progress 
+                        WHERE id = %s
+                        """
+                        delete_params = (selected_id,)
                         
                         # 先刪除相關圖片
-                        work_progress_id = find_work_progress_id(db_manager, delete_params[0], date_str, item_str)
-                        if work_progress_id:
-                            delete_images_from_database(db_manager, work_progress_id)
+                        delete_images_from_database(db_manager, selected_id)
                         
                         # 執行刪除
                         result = db_manager.execute_query(delete_query, delete_params, fetch=False)
