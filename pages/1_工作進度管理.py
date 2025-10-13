@@ -949,14 +949,14 @@ def edit_work_item(db_manager, current_user, selected_user=None):
                     update_data = (
                         date, usage_status, release_form, factory, username, item, purpose, problem, status, solution,
                         deadline, completion_rate, estimate, revenue, cost, gross_profit/100, customer, selected_phase_code,
-                        selected_id  # 使用主鍵 ID
+                        int(selected_id)  # 確保是 Python 原生 int 類型
                     )
                     
                     if db_manager.execute_query(update_query, update_data, fetch=False):
                         # 處理圖片上傳
                         if uploaded_files:
-                            # 直接使用 selected_id 作為 work_progress_id
-                            success_count = upload_images_to_database(db_manager, selected_id, uploaded_files)
+                            # 直接使用 selected_id 作為 work_progress_id，確保是 int 類型
+                            success_count = upload_images_to_database(db_manager, int(selected_id), uploaded_files)
                             if success_count > 0:
                                 st.success(f"工作項目已成功更新！並新增了 {success_count} 張圖片。")
                             else:
@@ -1041,10 +1041,11 @@ def delete_work_item(db_manager, current_user, selected_user=None):
                         DELETE FROM work_progress 
                         WHERE id = %s
                         """
-                        delete_params = (selected_id,)
+                        # 確保 selected_id 是 Python 原生 int 類型
+                        delete_params = (int(selected_id),)
                         
-                        # 先刪除相關圖片
-                        delete_images_from_database(db_manager, selected_id)
+                        # 先刪除相關圖片，確保是 int 類型
+                        delete_images_from_database(db_manager, int(selected_id))
                         
                         # 執行刪除
                         result = db_manager.execute_query(delete_query, delete_params, fetch=False)
