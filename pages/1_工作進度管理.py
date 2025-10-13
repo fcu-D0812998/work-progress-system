@@ -722,10 +722,10 @@ def edit_work_item(db_manager, current_user, selected_user=None):
         st.warning("目前沒有資料可以編輯。")
         return
     
-    # 選擇要編輯的項目 - 改用 ID 和更多資訊來識別
+    # 選擇要編輯的項目 - 改用 ID 和項目名稱來識別
     if 'id' in df.columns and 'item' in df.columns:
-        # 創建顯示選項，包含 ID、日期和項目名稱
-        df['display_option'] = df.apply(lambda row: f"ID:{row['id']} | {row['date'].strftime('%m/%d')} | {row['item']}", axis=1)
+        # 創建顯示選項，包含 ID 和項目名稱
+        df['display_option'] = df.apply(lambda row: f"ID:{row['id']} | {row['item']}", axis=1)
         
         selected_display = st.selectbox("選擇要編輯的項目", df['display_option'].tolist())
         
@@ -1015,10 +1015,10 @@ def delete_work_item(db_manager, current_user, selected_user=None):
         st.warning("目前沒有資料可以刪除。")
         return
     
-    # 選擇要刪除的項目 - 改用 ID 和更多資訊來識別
+    # 選擇要刪除的項目 - 改用 ID 和項目名稱來識別
     if 'id' in df.columns and 'item' in df.columns:
-        # 創建顯示選項，包含 ID、日期和項目名稱
-        df['display_option'] = df.apply(lambda row: f"ID:{row['id']} | {row['date'].strftime('%m/%d')} | {row['item']}", axis=1)
+        # 創建顯示選項，包含 ID 和項目名稱
+        df['display_option'] = df.apply(lambda row: f"ID:{row['id']} | {row['item']}", axis=1)
         
         selected_display = st.selectbox("選擇要刪除的項目", df['display_option'].tolist(), key="delete_select")
         
