@@ -272,8 +272,7 @@ if uploaded_file is not None:
         else:
             df_threshold = df[abs(z_values - threshold_value) <= 0.001]
         
-        if len(df_threshold) > 0:
-            st.write(f"**閾值範圍內的資料點**: {list(df_threshold.iloc[:, 0])}")  # 顯示點名稱
+        # 移除顯示名稱列表，只保留統計資訊
         
         # 標準差過濾選項
         st.subheader("🔍 資料過濾選項")
