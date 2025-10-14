@@ -115,11 +115,9 @@ def create_visualization(df=None):
                                text=[f"Dimple: {list(df_in['Dimple'])[i]}<br>X: {list(df_in['X'])[i]:.2f} mm<br>Y: {list(df_in['Y'])[i]:.2f} mm<br>Z: {list(df_in['Z'])[i]:.4f} mm"
                                      for i in range(len(df_in))],
                                hoverinfo='text', showlegend=False))
-    # 底部文字    
-    fig.add_trace(go.Scatter3d(x=x_in, y=y_in, z=np.zeros_like(z_in), mode='markers+text',
+    # 底部標記點（不顯示名稱文字）
+    fig.add_trace(go.Scatter3d(x=x_in, y=y_in, z=np.zeros_like(z_in), mode='markers',
                                marker=dict(size=10, color=z_in, colorscale='Jet', opacity=1, symbol='circle'),
-                               text=df_in['Dimple'], textposition="middle center",
-                               textfont=dict(size=11, color='white'),
                                hoverinfo='text', hovertext=[
                                    f"Dimple: {list(df_in['Dimple'])[i]}<br>X: {list(df_in['X'])[i]:.2f} mm<br>Y: {list(df_in['Y'])[i]:.2f} mm<br>Z: {list(df_in['Z'])[i]:.4f} mm"
                                    for i in range(len(df_in))],
