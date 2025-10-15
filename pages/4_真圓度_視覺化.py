@@ -307,8 +307,8 @@ if uploaded_file is not None:
             df_filtered = df
             st.info(f"顯示所有資料：{total_points} 個點")
         
-        # 直接使用 show.py 的 create_visualization 函數
-        fig = show.create_visualization(df_filtered)
+        # 使用 show.py 的 create_visualization 函數，啟用遮擋層
+        fig = show.create_visualization(df_filtered, show_shield=True)
         
         # 使用全寬顯示圖表，並設定高度
         st.plotly_chart(fig, use_container_width=True, height=800)

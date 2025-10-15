@@ -41,8 +41,13 @@ def validate_every_cell(df):
                     )
 
 
-def create_visualization(df=None):
-    """創建 3D Dimple 視覺化，含格式檢查"""
+def create_visualization(df=None, show_shield=False):
+    """創建 3D Dimple 視覺化，含格式檢查
+    
+    參數:
+        df: 資料框
+        show_shield: 是否顯示 z=0.001 的遮擋圓盤（從底部往上看時阻擋3D點）
+    """
     if df is None:
         df_raw = pd.read_csv("B01_to_B50_output.csv", header=None)
     else:
@@ -116,29 +121,30 @@ def create_visualization(df=None):
                                    for i in range(len(df_in))],
                                showlegend=False))
     
-    # 3. 不透明圓盤（z=0.001）- 作為遮擋層，從底部往上看時阻擋上方的3D點
-    n_r = 30  # 徑向分辨率
-    n_theta = 100  # 角度分辨率
-    r_grid = np.linspace(0, r, n_r)
-    theta_grid = np.linspace(0, 2*np.pi, n_theta)
-    r_mesh, theta_mesh = np.meshgrid(r_grid, theta_grid)
-    
-    # 轉換成笛卡爾坐標
-    shield_disk_x = r_mesh * np.cos(theta_mesh)
-    shield_disk_y = r_mesh * np.sin(theta_mesh)
-    shield_disk_z = np.ones_like(shield_disk_x) * 0.001  # 在 z=0.001
-    
-    # 畫不透明遮擋圓盤
-    fig.add_trace(go.Surface(
-        x=shield_disk_x, 
-        y=shield_disk_y, 
-        z=shield_disk_z,
-        colorscale=[[0, 'white'], [1, 'white']],  # 純白色
-        showscale=False,
-        opacity=1,
-        showlegend=False,
-        hoverinfo='skip'
-    ))
+    # 3. 不透明圓盤（z=0.001）- 可選的遮擋層，從底部往上看時阻擋上方的3D點
+    if show_shield:
+        n_r = 30  # 徑向分辨率
+        n_theta = 100  # 角度分辨率
+        r_grid = np.linspace(0, r, n_r)
+        theta_grid = np.linspace(0, 2*np.pi, n_theta)
+        r_mesh, theta_mesh = np.meshgrid(r_grid, theta_grid)
+        
+        # 轉換成笛卡爾坐標
+        shield_disk_x = r_mesh * np.cos(theta_mesh)
+        shield_disk_y = r_mesh * np.sin(theta_mesh)
+        shield_disk_z = np.ones_like(shield_disk_x) * 0.001  # 在 z=0.001
+        
+        # 畫不透明遮擋圓盤
+        fig.add_trace(go.Surface(
+            x=shield_disk_x, 
+            y=shield_disk_y, 
+            z=shield_disk_z,
+            colorscale=[[0, 'white'], [1, 'white']],  # 純白色
+            showscale=False,
+            opacity=1,
+            showlegend=False,
+            hoverinfo='skip'
+        ))
     
     # 4. 畫圓盤表面（3D高度圖）
     fig.add_trace(go.Surface(x=xi_grid, y=yi_grid, z=zi_grid,
