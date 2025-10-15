@@ -103,25 +103,54 @@ def create_visualization(df=None):
 
     # 畫圖
     fig = go.Figure()
+    
+    # 1. 底部邊界圓圈線
     fig.add_trace(go.Scatter3d(x=circle_x, y=circle_y, z=circle_z, mode='lines',
                                line=dict(color='lightblue', width=4), showlegend=False))
-    # 畫圓盤表面
-    fig.add_trace(go.Surface(x=xi_grid, y=yi_grid, z=zi_grid,
-                              colorscale='Jet', opacity=1, showscale=False, showlegend=False))
-    # 畫點
-    fig.add_trace(go.Scatter3d(x=x_in, y=y_in, z=z_in, mode='markers',
-                               marker=dict(size=5, color=z_in, colorscale='Jet', opacity=0.6,
-                                           colorbar=dict(title='Z (mm)', x=0.02)),
-                               text=[f"Dimple: {list(df_in['Dimple'])[i]}<br>X: {list(df_in['X'])[i]:.2f} mm<br>Y: {list(df_in['Y'])[i]:.2f} mm<br>Z: {list(df_in['Z'])[i]:.4f} mm"
-                                     for i in range(len(df_in))],
-                               hoverinfo='text', showlegend=False))
-    # 底部標記點（不顯示名稱文字）
+    
+    # 2. 底部投影點（z=0）
     fig.add_trace(go.Scatter3d(x=x_in, y=y_in, z=np.zeros_like(z_in), mode='markers',
                                marker=dict(size=10, color=z_in, colorscale='Jet', opacity=1, symbol='circle'),
                                hoverinfo='text', hovertext=[
                                    f"Dimple: {list(df_in['Dimple'])[i]}<br>X: {list(df_in['X'])[i]:.2f} mm<br>Y: {list(df_in['Y'])[i]:.2f} mm<br>Z: {list(df_in['Z'])[i]:.4f} mm"
                                    for i in range(len(df_in))],
                                showlegend=False))
+    
+    # 3. 不透明圓盤（z=0.001）- 作為遮擋層，從底部往上看時阻擋上方的3D點
+    n_r = 30  # 徑向分辨率
+    n_theta = 100  # 角度分辨率
+    r_grid = np.linspace(0, r, n_r)
+    theta_grid = np.linspace(0, 2*np.pi, n_theta)
+    r_mesh, theta_mesh = np.meshgrid(r_grid, theta_grid)
+    
+    # 轉換成笛卡爾坐標
+    shield_disk_x = r_mesh * np.cos(theta_mesh)
+    shield_disk_y = r_mesh * np.sin(theta_mesh)
+    shield_disk_z = np.ones_like(shield_disk_x) * 0.001  # 在 z=0.001
+    
+    # 畫不透明遮擋圓盤
+    fig.add_trace(go.Surface(
+        x=shield_disk_x, 
+        y=shield_disk_y, 
+        z=shield_disk_z,
+        colorscale=[[0, 'white'], [1, 'white']],  # 純白色
+        showscale=False,
+        opacity=1,
+        showlegend=False,
+        hoverinfo='skip'
+    ))
+    
+    # 4. 畫圓盤表面（3D高度圖）
+    fig.add_trace(go.Surface(x=xi_grid, y=yi_grid, z=zi_grid,
+                              colorscale='Jet', opacity=1, showscale=False, showlegend=False))
+    
+    # 5. 畫3D空間中的測量點
+    fig.add_trace(go.Scatter3d(x=x_in, y=y_in, z=z_in, mode='markers',
+                               marker=dict(size=5, color=z_in, colorscale='Jet', opacity=0.6,
+                                           colorbar=dict(title='Z (mm)', x=0.02)),
+                               text=[f"Dimple: {list(df_in['Dimple'])[i]}<br>X: {list(df_in['X'])[i]:.2f} mm<br>Y: {list(df_in['Y'])[i]:.2f} mm<br>Z: {list(df_in['Z'])[i]:.4f} mm"
+                                     for i in range(len(df_in))],
+                               hoverinfo='text', showlegend=False))
 
     fig.update_layout(
         scene=dict(
