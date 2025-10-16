@@ -102,7 +102,7 @@ def init_session_state():
         st.session_state.column_order = [
             '編號', '日期', '放行單', '使用狀況', '客戶', '廠區', 'User', '工作項目', 
             '目的', '問題', '狀態', '解決方案', '目前階段', '完成度', '預估營收', 
-            '營收', '成本', '毛利率', '截止日期'
+            '單件售價', '累積營收', '成本', '毛利率', '截止日期'
         ]
     if 'use_custom_order' not in st.session_state:
         st.session_state.use_custom_order = False
@@ -265,6 +265,57 @@ def load_work_data(db_manager, current_user, week_start, selected_user=None):
         
     except Exception as e:
         st.error(f"載入資料時發生錯誤：{e}")
+        return pd.DataFrame()
+
+def load_all_work_data_for_cumulative(db_manager, current_user, selected_user=None):
+    """載入所有歷史工作資料（用於計算累積營收）"""
+    try:
+        # 檢查資料庫連線狀態
+        if not db_manager.conn or db_manager.conn.closed:
+            if not db_manager.connect():
+                st.error("無法重新連線到資料庫")
+                return pd.DataFrame()
+        
+        # 不限制日期範圍，載入所有歷史資料
+        if current_user['role'] == 'admin':
+            if selected_user:
+                query = """
+                SELECT wp.id, wp.date, wp.item, wp.revenue
+                FROM work_progress wp 
+                JOIN users u ON wp.user_id = u.id 
+                WHERE u.full_name = %s
+                ORDER BY wp.item, wp.date ASC
+                """
+                result = db_manager.execute_query(query, (selected_user,))
+            else:
+                query = """
+                SELECT wp.id, wp.date, wp.item, wp.revenue
+                FROM work_progress wp 
+                JOIN users u ON wp.user_id = u.id 
+                ORDER BY wp.item, wp.date ASC
+                """
+                result = db_manager.execute_query(query)
+        else:
+            query = """
+            SELECT id, date, item, revenue
+            FROM work_progress 
+            WHERE user_id = %s 
+            ORDER BY item, date ASC
+            """
+            result = db_manager.execute_query(query, (current_user['id'],))
+        
+        if result:
+            df = pd.DataFrame(result, columns=['id', 'date', 'item', 'revenue'])
+            
+            # 確保日期欄位為 datetime 類型
+            if 'date' in df.columns:
+                df['date'] = pd.to_datetime(df['date'])
+            
+            return df
+        return pd.DataFrame()
+        
+    except Exception as e:
+        st.error(f"載入歷史資料時發生錯誤：{e}")
         return pd.DataFrame()
 
 def check_table_structure(db_manager):
@@ -1466,7 +1517,7 @@ def main_dashboard():
             all_columns = [
                 '編號', '日期', '放行單', '使用狀況', '客戶', '廠區', 'User', '工作項目', 
                 '目的', '問題', '狀態', '解決方案', '目前階段', '完成度', '預估營收', 
-                '營收', '成本', '毛利率', '截止日期'
+                '單件售價', '累積營收', '成本', '毛利率', '截止日期'
             ]
             
             # 欄位選擇器
@@ -1566,7 +1617,32 @@ def main_dashboard():
                            st.session_state.current_week_start, st.session_state.selected_user)
         
         if not df.empty:
-            # 格式化顯示
+            # 載入所有歷史資料（用於計算累積營收）
+            df_all_history = load_all_work_data_for_cumulative(
+                st.session_state.db_manager, 
+                st.session_state.current_user, 
+                st.session_state.selected_user
+            )
+            
+            # 在所有歷史資料上計算累積營收
+            if not df_all_history.empty:
+                # 確保 revenue 是數值類型
+                df_all_history['revenue'] = pd.to_numeric(df_all_history['revenue'], errors='coerce').fillna(0)
+                
+                # 已經按 item 和 date 排序，直接累加
+                df_all_history['cumulative_revenue'] = df_all_history.groupby('item')['revenue'].cumsum()
+                
+                # 將累積營收合併到當週資料
+                df = df.merge(
+                    df_all_history[['id', 'cumulative_revenue']], 
+                    on='id', 
+                    how='left'
+                )
+            else:
+                # 如果沒有歷史資料，累積營收就是當前營收
+                df['cumulative_revenue'] = pd.to_numeric(df['revenue'], errors='coerce').fillna(0)
+            
+            # 創建顯示用的 DataFrame
             display_df = df.copy()
             
             # 安全地格式化日期欄位
@@ -1584,6 +1660,7 @@ def main_dashboard():
             display_df['completion_rate'] = display_df['completion_rate'].fillna(0).astype(str) + '%'
             display_df['estimate'] = display_df['estimate'].fillna(0).apply(lambda x: f"{int(x):,}")
             display_df['revenue'] = display_df['revenue'].fillna(0).apply(lambda x: f"{int(x):,}")
+            display_df['cumulative_revenue'] = display_df['cumulative_revenue'].fillna(0).apply(lambda x: f"{int(x):,}")
             display_df['cost'] = display_df['cost'].fillna(0).apply(lambda x: f"{int(x):,}")
             display_df['gross_profit'] = (display_df['gross_profit'].fillna(0) * 100).apply(lambda x: f"{x:.2f}%")
             
@@ -1631,7 +1708,8 @@ def main_dashboard():
                 'deadline': '截止日期',
                 'completion_rate': '完成度',
                 'estimate': '預估營收',
-                'revenue': '營收',
+                'revenue': '單件售價',
+                'cumulative_revenue': '累積營收',
                 'cost': '成本',
                 'gross_profit': '毛利率',
                 'customer': '客戶'
@@ -1647,7 +1725,7 @@ def main_dashboard():
                 # 如果沒有可用欄位，使用預設順序
                 default_order = [
                     '編號', '日期', '放行單', '使用狀況', '客戶', '廠區', 'User', '工作項目', '目的', '問題', '狀態', '解決方案', '目前階段',
-                    '完成度', '預估營收', '營收', '成本', '毛利率', '截止日期'
+                    '完成度', '預估營收', '單件售價', '累積營收', '成本', '毛利率', '截止日期'
                 ]
                 available_columns = [col for col in default_order if col in display_df.columns]
                 display_df = display_df.reindex(columns=available_columns)
