@@ -219,7 +219,7 @@ def load_work_data(db_manager, current_user, week_start, selected_user=None):
             if selected_user:
                 query = """
                 SELECT wp.id, wp.date, wp.usage_status, wp.release_form, wp.factory, wp.username, wp.item, wp.purpose, wp.problem, wp.status, wp.solution, wp.deadline,
-                       wp.completion_rate, wp.estimate, wp.revenue, wp.cost, wp.gross_profit, wp.customer, wp.phase_code
+                       wp.completion_rate, wp.estimate, wp.revenue, wp.cost, wp.gross_profit, wp.customer, wp.phase_code, wp.cumulative_revenue
                 FROM work_progress wp 
                 JOIN users u ON wp.user_id = u.id 
                 WHERE u.full_name = %s
@@ -230,7 +230,7 @@ def load_work_data(db_manager, current_user, week_start, selected_user=None):
             else:
                 query = """
                 SELECT wp.id, wp.date, wp.usage_status, wp.release_form, wp.factory, wp.username, wp.item, wp.purpose, wp.problem, wp.status, wp.solution, wp.deadline,
-                       wp.completion_rate, wp.estimate, wp.revenue, wp.cost, wp.gross_profit, wp.customer, wp.phase_code
+                       wp.completion_rate, wp.estimate, wp.revenue, wp.cost, wp.gross_profit, wp.customer, wp.phase_code, wp.cumulative_revenue
                 FROM work_progress wp 
                 JOIN users u ON wp.user_id = u.id 
                 WHERE wp.date >= %s AND wp.date <= %s
@@ -240,7 +240,7 @@ def load_work_data(db_manager, current_user, week_start, selected_user=None):
         else:
             query = """
             SELECT id, date, usage_status, release_form, factory, username, item, purpose, problem, status, solution, deadline, 
-                   completion_rate, estimate, revenue, cost, gross_profit, customer, phase_code
+                   completion_rate, estimate, revenue, cost, gross_profit, customer, phase_code, cumulative_revenue
             FROM work_progress 
             WHERE user_id = %s 
               AND date >= %s AND date <= %s
@@ -251,7 +251,7 @@ def load_work_data(db_manager, current_user, week_start, selected_user=None):
         if result:
             df = pd.DataFrame(result, columns=[
                 'id', 'date', 'usage_status', 'release_form', 'factory', 'username', 'item', 'purpose', 'problem', 'status', 'solution', 'deadline',
-                'completion_rate', 'estimate', 'revenue', 'cost', 'gross_profit', 'customer', 'phase_code'
+                'completion_rate', 'estimate', 'revenue', 'cost', 'gross_profit', 'customer', 'phase_code', 'cumulative_revenue'
             ])
             
             # 確保日期欄位為 datetime 類型
@@ -265,57 +265,6 @@ def load_work_data(db_manager, current_user, week_start, selected_user=None):
         
     except Exception as e:
         st.error(f"載入資料時發生錯誤：{e}")
-        return pd.DataFrame()
-
-def load_all_work_data_for_cumulative(db_manager, current_user, selected_user=None):
-    """載入所有歷史工作資料（用於計算累積營收）"""
-    try:
-        # 檢查資料庫連線狀態
-        if not db_manager.conn or db_manager.conn.closed:
-            if not db_manager.connect():
-                st.error("無法重新連線到資料庫")
-                return pd.DataFrame()
-        
-        # 不限制日期範圍，載入所有歷史資料
-        if current_user['role'] == 'admin':
-            if selected_user:
-                query = """
-                SELECT wp.id, wp.date, wp.item, wp.revenue
-                FROM work_progress wp 
-                JOIN users u ON wp.user_id = u.id 
-                WHERE u.full_name = %s
-                ORDER BY wp.item, wp.date ASC
-                """
-                result = db_manager.execute_query(query, (selected_user,))
-            else:
-                query = """
-                SELECT wp.id, wp.date, wp.item, wp.revenue
-                FROM work_progress wp 
-                JOIN users u ON wp.user_id = u.id 
-                ORDER BY wp.item, wp.date ASC
-                """
-                result = db_manager.execute_query(query)
-        else:
-            query = """
-            SELECT id, date, item, revenue
-            FROM work_progress 
-            WHERE user_id = %s 
-            ORDER BY item, date ASC
-            """
-            result = db_manager.execute_query(query, (current_user['id'],))
-        
-        if result:
-            df = pd.DataFrame(result, columns=['id', 'date', 'item', 'revenue'])
-            
-            # 確保日期欄位為 datetime 類型
-            if 'date' in df.columns:
-                df['date'] = pd.to_datetime(df['date'])
-            
-            return df
-        return pd.DataFrame()
-        
-    except Exception as e:
-        st.error(f"載入歷史資料時發生錯誤：{e}")
         return pd.DataFrame()
 
 def check_table_structure(db_manager):
@@ -456,7 +405,11 @@ def clean_empty_phase_codes(db_manager):
         return False
 
 def calculate_cumulative_revenue(db_manager, current_user, selected_user=None):
-    """計算累計營收統計（所有歷史資料，SQL 去重）"""
+    """計算累計營收統計（所有歷史資料，SQL 去重）
+    
+    去重邏輯：每個工作項目（item）取最新一筆記錄的 cumulative_revenue
+    然後加總所有項目的累積營收
+    """
     try:
         
         # 檢查資料庫連線狀態
@@ -473,9 +426,9 @@ def calculate_cumulative_revenue(db_manager, current_user, selected_user=None):
         if current_user['role'] == 'admin':
             if selected_user:
                 query = """
-                SELECT wp.estimate, wp.revenue, wp.cost
+                SELECT wp.estimate, wp.cumulative_revenue, wp.cost
                 FROM (
-                    SELECT wp.estimate, wp.revenue, wp.cost,
+                    SELECT wp.estimate, wp.cumulative_revenue, wp.cost,
                            ROW_NUMBER() OVER (PARTITION BY wp.item ORDER BY wp.date DESC) as rn
                     FROM work_progress wp 
                     JOIN users u ON wp.user_id = u.id 
@@ -486,9 +439,9 @@ def calculate_cumulative_revenue(db_manager, current_user, selected_user=None):
                 result = db_manager.execute_query(query, (selected_user,))
             else:
                 query = """
-                SELECT wp.estimate, wp.revenue, wp.cost
+                SELECT wp.estimate, wp.cumulative_revenue, wp.cost
                 FROM (
-                    SELECT wp.estimate, wp.revenue, wp.cost,
+                    SELECT wp.estimate, wp.cumulative_revenue, wp.cost,
                            ROW_NUMBER() OVER (PARTITION BY wp.item ORDER BY wp.date DESC) as rn
                     FROM work_progress wp 
                     JOIN users u ON wp.user_id = u.id 
@@ -498,9 +451,9 @@ def calculate_cumulative_revenue(db_manager, current_user, selected_user=None):
                 result = db_manager.execute_query(query)
         else:
             query = """
-            SELECT estimate, revenue, cost
+            SELECT estimate, cumulative_revenue, cost
             FROM (
-                SELECT estimate, revenue, cost,
+                SELECT estimate, cumulative_revenue, cost,
                        ROW_NUMBER() OVER (PARTITION BY item ORDER BY date DESC) as rn
                 FROM work_progress 
                 WHERE user_id = %s 
@@ -512,7 +465,7 @@ def calculate_cumulative_revenue(db_manager, current_user, selected_user=None):
         if result:
             # 計算統計數值
             total_estimate = sum(row[0] or 0 for row in result)
-            total_revenue = sum(row[1] or 0 for row in result)
+            total_revenue = sum(row[1] or 0 for row in result)  # 現在是累積營收
             total_cost = sum(row[2] or 0 for row in result)
             
             # 計算毛利率
@@ -599,7 +552,8 @@ def add_work_item(db_manager, current_user, week_start, selected_user=None):
         with col2:
             completion_rate = st.slider("完成度 (%)", 0, 100, 0)
             estimate = st.number_input("預估營收", min_value=0, value=0, step=1000, format="%d")
-            revenue = st.number_input("營收", min_value=0, value=0, step=1000, format="%d")
+            revenue = st.number_input("單件售價", min_value=0, value=0, step=1000, format="%d")
+            cumulative_revenue = st.number_input("累積營收", min_value=0, value=0, step=1000, format="%d", help="選填，預設為0")
             cost = st.number_input("成本", min_value=0, value=0, step=1000, format="%d")
         
         solution = st.text_area("解決方案", placeholder="請輸入解決方案", height=100)
@@ -659,8 +613,8 @@ def add_work_item(db_manager, current_user, week_start, selected_user=None):
             # 插入資料庫
             insert_query = """
             INSERT INTO work_progress (user_id, date, usage_status, release_form, factory, username, item, purpose, problem, status, solution, deadline, 
-                                     completion_rate, estimate, revenue, cost, gross_profit, customer, phase_code)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                                     completion_rate, estimate, revenue, cost, gross_profit, customer, phase_code, cumulative_revenue)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             RETURNING id
             """
             
@@ -669,7 +623,7 @@ def add_work_item(db_manager, current_user, week_start, selected_user=None):
             
             insert_data = (
                 user_id, date, usage_status, release_form, factory, username, item, purpose, problem, status, solution,
-                deadline, completion_rate, estimate, revenue, cost, gross_profit_decimal, customer, selected_phase_code
+                deadline, completion_rate, estimate, revenue, cost, gross_profit_decimal, customer, selected_phase_code, cumulative_revenue
             )
             
             try:
@@ -903,9 +857,16 @@ def edit_work_item(db_manager, current_user, selected_user=None):
                     else:
                         cost_value = int(float(cost_value))
                     
+                    cumulative_revenue_value = item_data['cumulative_revenue']
+                    if pd.isna(cumulative_revenue_value):
+                        cumulative_revenue_value = 0
+                    else:
+                        cumulative_revenue_value = int(float(cumulative_revenue_value))
+                    
                     completion_rate = st.slider("完成度 (%)", 0, 100, completion_value)
                     estimate = st.number_input("預估營收", min_value=0, value=estimate_value, step=1000, format="%d")
-                    revenue = st.number_input("營收", min_value=0, value=revenue_value, step=1000, format="%d")
+                    revenue = st.number_input("單件售價", min_value=0, value=revenue_value, step=1000, format="%d")
+                    cumulative_revenue = st.number_input("累積營收", min_value=0, value=cumulative_revenue_value, step=1000, format="%d", help="可手動調整")
                     cost = st.number_input("成本", min_value=0, value=cost_value, step=1000, format="%d")
                 
                 # 安全地處理文字欄位
@@ -993,13 +954,13 @@ def edit_work_item(db_manager, current_user, selected_user=None):
                     update_query = """
                     UPDATE work_progress 
                     SET date = %s, usage_status = %s, release_form = %s, factory = %s, username = %s, item = %s, purpose = %s, problem = %s, status = %s, solution = %s, 
-                        deadline = %s, completion_rate = %s, estimate = %s, revenue = %s, cost = %s, gross_profit = %s, customer = %s, phase_code = %s
+                        deadline = %s, completion_rate = %s, estimate = %s, revenue = %s, cost = %s, gross_profit = %s, customer = %s, phase_code = %s, cumulative_revenue = %s
                     WHERE id = %s
                     """
                     
                     update_data = (
                         date, usage_status, release_form, factory, username, item, purpose, problem, status, solution,
-                        deadline, completion_rate, estimate, revenue, cost, gross_profit/100, customer, selected_phase_code,
+                        deadline, completion_rate, estimate, revenue, cost, gross_profit/100, customer, selected_phase_code, cumulative_revenue,
                         int(selected_id)  # 確保是 Python 原生 int 類型
                     )
                     
@@ -1279,7 +1240,7 @@ def copy_previous_week_data(db_manager, current_user, selected_user=None):
             if selected_user:
                 query = """
                 SELECT wp.id, wp.date, wp.usage_status, wp.release_form, wp.factory, wp.username, wp.item, wp.purpose, wp.problem, wp.status, wp.solution, wp.deadline,
-                       wp.completion_rate, wp.estimate, wp.revenue, wp.cost, wp.gross_profit, wp.customer, wp.phase_code
+                       wp.completion_rate, wp.estimate, wp.revenue, wp.cost, wp.gross_profit, wp.customer, wp.phase_code, wp.cumulative_revenue
                 FROM work_progress wp 
                 JOIN users u ON wp.user_id = u.id 
                 WHERE u.full_name = %s
@@ -1293,7 +1254,7 @@ def copy_previous_week_data(db_manager, current_user, selected_user=None):
         else:
             query = """
             SELECT id, date, usage_status, release_form, factory, username, item, purpose, problem, status, solution, deadline, 
-                   completion_rate, estimate, revenue, cost, gross_profit, customer, phase_code
+                   completion_rate, estimate, revenue, cost, gross_profit, customer, phase_code, cumulative_revenue
             FROM work_progress 
             WHERE user_id = %s 
               AND date >= %s AND date <= %s
@@ -1333,8 +1294,8 @@ def copy_previous_week_data(db_manager, current_user, selected_user=None):
                         # 插入新資料
                         insert_query = """
                         INSERT INTO work_progress (user_id, date, usage_status, release_form, factory, username, item, purpose, problem, status, solution, deadline, 
-                                                 completion_rate, estimate, revenue, cost, gross_profit, customer, phase_code)
-                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                                                 completion_rate, estimate, revenue, cost, gross_profit, customer, phase_code, cumulative_revenue)
+                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                         """
                         
                         # 取得使用者ID
@@ -1372,9 +1333,12 @@ def copy_previous_week_data(db_manager, current_user, selected_user=None):
                         # 處理階段代碼，如果是空的則設定為 P1
                         phase_code = row_data[18] if row_data[18] and str(row_data[18]).strip() != '' else 'P1'
                         
+                        # 處理累積營收，如果是空的則設定為 0
+                        cumulative_revenue = row_data[19] if row_data[19] else 0
+                        
                         insert_data = (
                             user_id, new_date, row_data[2], row_data[3], row_data[4], row_data[5], row_data[6], row_data[7], row_data[8], row_data[9], row_data[10], 
-                            new_deadline, row_data[12], row_data[13], row_data[14], row_data[15], row_data[16], row_data[17], phase_code
+                            new_deadline, row_data[12], row_data[13], row_data[14], row_data[15], row_data[16], row_data[17], phase_code, cumulative_revenue
                         )
                         
                         if db_manager.execute_query(insert_query, insert_data, fetch=False):
@@ -1461,9 +1425,9 @@ def main_dashboard():
     
     with col2:
         st.metric(
-            label="總營收",
+            label="總累積營收",
             value=f"{cumulative_revenue['total_revenue']:,}",
-            help="所有項目的實際營收總和（去重後）"
+            help="所有項目的累積營收總和（每個項目取最新一筆，去重後）"
         )
     
     with col3:
@@ -1477,7 +1441,7 @@ def main_dashboard():
         st.metric(
             label="毛利率",
             value=f"{cumulative_revenue['gross_profit_margin']:.2f}%",
-            help="整體毛利率（(總營收-總成本)/總營收*100）"
+            help="整體毛利率（(總累積營收-總成本)/總累積營收*100）"
         )
     
     
@@ -1617,32 +1581,7 @@ def main_dashboard():
                            st.session_state.current_week_start, st.session_state.selected_user)
         
         if not df.empty:
-            # 載入所有歷史資料（用於計算累積營收）
-            df_all_history = load_all_work_data_for_cumulative(
-                st.session_state.db_manager, 
-                st.session_state.current_user, 
-                st.session_state.selected_user
-            )
-            
-            # 在所有歷史資料上計算累積營收
-            if not df_all_history.empty:
-                # 確保 revenue 是數值類型
-                df_all_history['revenue'] = pd.to_numeric(df_all_history['revenue'], errors='coerce').fillna(0)
-                
-                # 已經按 item 和 date 排序，直接累加
-                df_all_history['cumulative_revenue'] = df_all_history.groupby('item')['revenue'].cumsum()
-                
-                # 將累積營收合併到當週資料
-                df = df.merge(
-                    df_all_history[['id', 'cumulative_revenue']], 
-                    on='id', 
-                    how='left'
-                )
-            else:
-                # 如果沒有歷史資料，累積營收就是當前營收
-                df['cumulative_revenue'] = pd.to_numeric(df['revenue'], errors='coerce').fillna(0)
-            
-            # 創建顯示用的 DataFrame
+            # 創建顯示用的 DataFrame（直接從資料庫讀取 cumulative_revenue）
             display_df = df.copy()
             
             # 安全地格式化日期欄位
