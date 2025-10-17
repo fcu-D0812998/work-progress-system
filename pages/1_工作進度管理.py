@@ -107,6 +107,10 @@ def init_session_state():
     if 'use_custom_order' not in st.session_state:
         st.session_state.use_custom_order = False
     
+    # 初始化統計項目篩選設定
+    if 'selected_items_for_stats' not in st.session_state:
+        st.session_state.selected_items_for_stats = None  # None 表示全選
+    
     # 🔍 新增：如果已登入且是 admin，確保 selected_user 有值
     if st.session_state.logged_in and st.session_state.current_user and st.session_state.current_user['role'] == 'admin':
         if st.session_state.db_manager and st.session_state.selected_user is None:
@@ -404,8 +408,12 @@ def clean_empty_phase_codes(db_manager):
         st.error(f"清理空的階段代碼時發生錯誤：{e}")
         return False
 
-def get_cumulative_revenue_details(db_manager, current_user, selected_user=None):
-    """取得累積營收明細（每個項目的最新一筆記錄）"""
+def get_cumulative_revenue_details(db_manager, current_user, selected_user=None, filter_items=None):
+    """取得累積營收明細（每個項目的最新一筆記錄）
+    
+    參數:
+        filter_items: 要篩選的項目列表，None 表示全選
+    """
     try:
         # 檢查資料庫連線狀態
         if not db_manager.conn or db_manager.conn.closed:
@@ -460,6 +468,11 @@ def get_cumulative_revenue_details(db_manager, current_user, selected_user=None)
             df = pd.DataFrame(result, columns=[
                 'item', 'customer', 'date', 'revenue', 'cumulative_revenue', 'cost', 'gross_profit'
             ])
+            
+            # 如果有篩選項目，進行過濾
+            if filter_items is not None and len(filter_items) > 0:
+                df = df[df['item'].isin(filter_items)]
+            
             return df
         return pd.DataFrame()
         
@@ -467,11 +480,14 @@ def get_cumulative_revenue_details(db_manager, current_user, selected_user=None)
         st.error(f"查詢累積營收明細時發生錯誤：{e}")
         return pd.DataFrame()
 
-def calculate_cumulative_revenue(db_manager, current_user, selected_user=None):
+def calculate_cumulative_revenue(db_manager, current_user, selected_user=None, filter_items=None):
     """計算累計營收統計（所有歷史資料，SQL 去重）
     
     去重邏輯：每個工作項目（item）取最新一筆記錄的 cumulative_revenue
     然後加總所有項目的累積營收
+    
+    參數:
+        filter_items: 要篩選的項目列表，None 表示全選
     """
     try:
         
@@ -489,9 +505,9 @@ def calculate_cumulative_revenue(db_manager, current_user, selected_user=None):
         if current_user['role'] == 'admin':
             if selected_user:
                 query = """
-                SELECT wp.estimate, wp.cumulative_revenue, wp.cost
+                SELECT wp.item, wp.estimate, wp.cumulative_revenue, wp.cost
                 FROM (
-                    SELECT wp.estimate, wp.cumulative_revenue, wp.cost,
+                    SELECT wp.item, wp.estimate, wp.cumulative_revenue, wp.cost,
                            ROW_NUMBER() OVER (PARTITION BY wp.item ORDER BY wp.date DESC) as rn
                     FROM work_progress wp 
                     JOIN users u ON wp.user_id = u.id 
@@ -502,9 +518,9 @@ def calculate_cumulative_revenue(db_manager, current_user, selected_user=None):
                 result = db_manager.execute_query(query, (selected_user,))
             else:
                 query = """
-                SELECT wp.estimate, wp.cumulative_revenue, wp.cost
+                SELECT wp.item, wp.estimate, wp.cumulative_revenue, wp.cost
                 FROM (
-                    SELECT wp.estimate, wp.cumulative_revenue, wp.cost,
+                    SELECT wp.item, wp.estimate, wp.cumulative_revenue, wp.cost,
                            ROW_NUMBER() OVER (PARTITION BY wp.item ORDER BY wp.date DESC) as rn
                     FROM work_progress wp 
                     JOIN users u ON wp.user_id = u.id 
@@ -514,9 +530,9 @@ def calculate_cumulative_revenue(db_manager, current_user, selected_user=None):
                 result = db_manager.execute_query(query)
         else:
             query = """
-            SELECT estimate, cumulative_revenue, cost
+            SELECT item, estimate, cumulative_revenue, cost
             FROM (
-                SELECT estimate, cumulative_revenue, cost,
+                SELECT item, estimate, cumulative_revenue, cost,
                        ROW_NUMBER() OVER (PARTITION BY item ORDER BY date DESC) as rn
                 FROM work_progress 
                 WHERE user_id = %s 
@@ -526,10 +542,14 @@ def calculate_cumulative_revenue(db_manager, current_user, selected_user=None):
             result = db_manager.execute_query(query, (current_user['id'],))
         
         if result:
+            # 如果有篩選項目，進行過濾
+            if filter_items is not None and len(filter_items) > 0:
+                result = [row for row in result if row[0] in filter_items]
+            
             # 計算統計數值
-            total_estimate = sum(row[0] or 0 for row in result)
-            total_revenue = sum(row[1] or 0 for row in result)  # 現在是累積營收
-            total_cost = sum(row[2] or 0 for row in result)
+            total_estimate = sum(row[1] or 0 for row in result)
+            total_revenue = sum(row[2] or 0 for row in result)  # 現在是累積營收
+            total_cost = sum(row[3] or 0 for row in result)
             
             # 計算毛利率
             if total_revenue > 0:
@@ -1469,11 +1489,17 @@ def main_dashboard():
     # 累計營收統計
     st.subheader("💰 累計營收統計")
     
-    # 計算累計營收統計
+    # 根據勾選項目計算統計
+    if st.session_state.selected_items_for_stats:
+        selected_items_for_calc = st.session_state.selected_items_for_stats
+    else:
+        selected_items_for_calc = None  # None 表示全選
+    
     cumulative_revenue = calculate_cumulative_revenue(
         st.session_state.db_manager, 
         st.session_state.current_user, 
-        st.session_state.selected_user
+        st.session_state.selected_user,
+        selected_items_for_calc
     )
     
     # 顯示累計營收統計指標
@@ -1507,8 +1533,8 @@ def main_dashboard():
             help="整體毛利率（(總累積營收-總成本)/總累積營收*100）"
         )
     
-    # 顯示累積營收明細
-    with st.expander("🔽 查看總累積營收明細", expanded=False):
+    # 顯示累積營收明細（使用可編輯表格支援 Checkbox）
+    with st.expander("🔽 查看明細資料", expanded=False):
         details_df = get_cumulative_revenue_details(
             st.session_state.db_manager, 
             st.session_state.current_user, 
@@ -1516,8 +1542,20 @@ def main_dashboard():
         )
         
         if not details_df.empty:
-            # 格式化顯示
+            # 初始化選擇狀態（使用項目名稱作為 key）
+            if 'items_selection_state' not in st.session_state:
+                st.session_state.items_selection_state = {}
+            
+            # 為每個項目設定預設勾選狀態（預設全選）
+            for item in details_df['item'].tolist():
+                if item not in st.session_state.items_selection_state:
+                    st.session_state.items_selection_state[item] = True
+            
+            # 準備顯示用的 DataFrame
             display_details = details_df.copy()
+            
+            # 加入「選擇」欄位（根據 session_state 的狀態）
+            display_details.insert(0, '選擇', display_details['item'].map(st.session_state.items_selection_state))
             
             # 格式化日期
             if pd.api.types.is_datetime64_any_dtype(display_details['date']):
@@ -1525,48 +1563,82 @@ def main_dashboard():
             else:
                 display_details['date'] = display_details['date'].astype(str)
             
-            # 格式化數值欄位
-            display_details['revenue'] = display_details['revenue'].fillna(0).apply(lambda x: f"{int(x):,}")
-            display_details['cumulative_revenue'] = display_details['cumulative_revenue'].fillna(0).apply(lambda x: f"{int(x):,}")
-            display_details['cost'] = display_details['cost'].fillna(0).apply(lambda x: f"{int(x):,}")
-            display_details['gross_profit'] = (display_details['gross_profit'].fillna(0) * 100).apply(lambda x: f"{x:.2f}%")
+            # 格式化數值欄位（保持數值類型用於計算，但顯示時格式化）
+            display_details['revenue_num'] = display_details['revenue'].fillna(0).astype(int)
+            display_details['cumulative_revenue_num'] = display_details['cumulative_revenue'].fillna(0).astype(int)
+            display_details['cost_num'] = display_details['cost'].fillna(0).astype(int)
+            display_details['gross_profit_pct'] = (display_details['gross_profit'].fillna(0) * 100)
             
             # 填充空值
             display_details['item'] = display_details['item'].fillna('').astype(str)
             display_details['customer'] = display_details['customer'].fillna('').astype(str)
             
-            # 重新命名欄位
-            display_details = display_details.rename(columns={
-                'item': '工作項目',
-                'customer': '客戶',
-                'date': '最新日期',
-                'revenue': '單件售價',
-                'cumulative_revenue': '累積營收',
-                'cost': '成本',
-                'gross_profit': '毛利率'
-            })
+            # 準備可編輯表格
+            editor_df = display_details[['選擇', 'item', 'customer', 'date', 'revenue_num', 'cumulative_revenue_num', 'cost_num', 'gross_profit_pct']].copy()
+            editor_df.columns = ['選擇', '工作項目', '客戶', '最新日期', '單件售價', '累積營收', '成本', '毛利率(%)']
             
-            # 顯示明細表格
-            st.dataframe(display_details, use_container_width=True, hide_index=True)
+            # 使用 data_editor 顯示可編輯表格
+            edited_df = st.data_editor(
+                editor_df,
+                column_config={
+                    "選擇": st.column_config.CheckboxColumn(
+                        "選擇",
+                        help="勾選以列入統計計算",
+                        default=True,
+                    ),
+                    "單件售價": st.column_config.NumberColumn(
+                        "單件售價",
+                        format="%d",
+                    ),
+                    "累積營收": st.column_config.NumberColumn(
+                        "累積營收",
+                        format="%d",
+                    ),
+                    "成本": st.column_config.NumberColumn(
+                        "成本",
+                        format="%d",
+                    ),
+                    "毛利率(%)": st.column_config.NumberColumn(
+                        "毛利率(%)",
+                        format="%.2f",
+                    ),
+                },
+                disabled=["工作項目", "客戶", "最新日期", "單件售價", "累積營收", "成本", "毛利率(%)"],
+                hide_index=True,
+                use_container_width=True,
+                key="cumulative_revenue_editor"
+            )
             
-            # 計算總計
-            total_cumulative = details_df['cumulative_revenue'].fillna(0).sum()
-            total_revenue = details_df['revenue'].fillna(0).sum()
-            total_cost = details_df['cost'].fillna(0).sum()
+            # 更新選擇狀態到 session_state
+            for idx, row in edited_df.iterrows():
+                item_name = row['工作項目']
+                is_selected = row['選擇']
+                st.session_state.items_selection_state[item_name] = is_selected
+            
+            # 計算總計（只計算勾選的項目）
+            selected_rows = edited_df[edited_df['選擇'] == True]
+            total_cumulative = selected_rows['累積營收'].sum()
+            total_revenue = selected_rows['單件售價'].sum()
+            total_cost = selected_rows['成本'].sum()
             
             # 顯示總計列
             st.markdown("---")
             col1, col2, col3, col4 = st.columns([2, 1, 1, 1])
             with col1:
-                st.write("**總計**")
+                st.write(f"**總計（已選擇 {len(selected_rows)}/{len(edited_df)} 個項目）**")
             with col2:
                 st.write(f"**單件售價總計：{int(total_revenue):,}**")
             with col3:
                 st.write(f"**累積營收總計：{int(total_cumulative):,}**")
             with col4:
                 st.write(f"**成本總計：{int(total_cost):,}**")
+            
+            # 取得勾選的項目列表（用於更新卡片統計）
+            selected_items = selected_rows['工作項目'].tolist()
+            st.session_state.selected_items_for_stats = selected_items
         else:
             st.info("目前沒有累積營收明細資料。")
+            selected_items = None
     
     # Admin 模式的使用者選擇
     if st.session_state.current_user['role'] == 'admin':
