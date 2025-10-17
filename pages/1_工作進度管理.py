@@ -404,6 +404,69 @@ def clean_empty_phase_codes(db_manager):
         st.error(f"清理空的階段代碼時發生錯誤：{e}")
         return False
 
+def get_cumulative_revenue_details(db_manager, current_user, selected_user=None):
+    """取得累積營收明細（每個項目的最新一筆記錄）"""
+    try:
+        # 檢查資料庫連線狀態
+        if not db_manager.conn or db_manager.conn.closed:
+            if not db_manager.connect():
+                st.error("無法重新連線到資料庫")
+                return pd.DataFrame()
+        
+        # 使用 SQL 查詢每個項目的最新一筆記錄
+        if current_user['role'] == 'admin':
+            if selected_user:
+                query = """
+                SELECT wp.item, wp.customer, wp.date, wp.revenue, wp.cumulative_revenue, wp.cost, wp.gross_profit
+                FROM (
+                    SELECT wp.item, wp.customer, wp.date, wp.revenue, wp.cumulative_revenue, wp.cost, wp.gross_profit,
+                           ROW_NUMBER() OVER (PARTITION BY wp.item ORDER BY wp.date DESC) as rn
+                    FROM work_progress wp 
+                    JOIN users u ON wp.user_id = u.id 
+                    WHERE u.full_name = %s
+                ) wp
+                WHERE wp.rn = 1
+                ORDER BY wp.date DESC
+                """
+                result = db_manager.execute_query(query, (selected_user,))
+            else:
+                query = """
+                SELECT wp.item, wp.customer, wp.date, wp.revenue, wp.cumulative_revenue, wp.cost, wp.gross_profit
+                FROM (
+                    SELECT wp.item, wp.customer, wp.date, wp.revenue, wp.cumulative_revenue, wp.cost, wp.gross_profit,
+                           ROW_NUMBER() OVER (PARTITION BY wp.item ORDER BY wp.date DESC) as rn
+                    FROM work_progress wp 
+                    JOIN users u ON wp.user_id = u.id 
+                ) wp
+                WHERE wp.rn = 1
+                ORDER BY wp.date DESC
+                """
+                result = db_manager.execute_query(query)
+        else:
+            query = """
+            SELECT item, customer, date, revenue, cumulative_revenue, cost, gross_profit
+            FROM (
+                SELECT item, customer, date, revenue, cumulative_revenue, cost, gross_profit,
+                       ROW_NUMBER() OVER (PARTITION BY item ORDER BY date DESC) as rn
+                FROM work_progress 
+                WHERE user_id = %s 
+            ) wp
+            WHERE rn = 1
+            ORDER BY date DESC
+            """
+            result = db_manager.execute_query(query, (current_user['id'],))
+        
+        if result:
+            df = pd.DataFrame(result, columns=[
+                'item', 'customer', 'date', 'revenue', 'cumulative_revenue', 'cost', 'gross_profit'
+            ])
+            return df
+        return pd.DataFrame()
+        
+    except Exception as e:
+        st.error(f"查詢累積營收明細時發生錯誤：{e}")
+        return pd.DataFrame()
+
 def calculate_cumulative_revenue(db_manager, current_user, selected_user=None):
     """計算累計營收統計（所有歷史資料，SQL 去重）
     
@@ -568,9 +631,9 @@ def add_work_item(db_manager, current_user, week_start, selected_user=None):
             st.warning("無法載入階段列表")
             selected_phase_code = None
         
-        # 自動計算毛利率
-        if revenue > 0:
-            gross_profit = ((revenue - cost) / revenue) * 100
+        # 自動計算毛利率（基於累積營收）
+        if cumulative_revenue > 0:
+            gross_profit = ((cumulative_revenue - cost) / cumulative_revenue) * 100
             st.info(f"毛利率: {gross_profit:.2f}%")
         else:
             gross_profit = 0.0
@@ -912,9 +975,9 @@ def edit_work_item(db_manager, current_user, selected_user=None):
                     st.warning("無法載入階段列表")
                     selected_phase_code = None
                 
-                # 自動計算毛利率
-                if revenue > 0:
-                    gross_profit = ((revenue - cost) / revenue) * 100
+                # 自動計算毛利率（基於累積營收）
+                if cumulative_revenue > 0:
+                    gross_profit = ((cumulative_revenue - cost) / cumulative_revenue) * 100
                     st.info(f"毛利率: {gross_profit:.2f}%")
                 else:
                     gross_profit = 0.0
@@ -1444,6 +1507,66 @@ def main_dashboard():
             help="整體毛利率（(總累積營收-總成本)/總累積營收*100）"
         )
     
+    # 顯示累積營收明細
+    with st.expander("🔽 查看總累積營收明細", expanded=False):
+        details_df = get_cumulative_revenue_details(
+            st.session_state.db_manager, 
+            st.session_state.current_user, 
+            st.session_state.selected_user
+        )
+        
+        if not details_df.empty:
+            # 格式化顯示
+            display_details = details_df.copy()
+            
+            # 格式化日期
+            if pd.api.types.is_datetime64_any_dtype(display_details['date']):
+                display_details['date'] = display_details['date'].dt.strftime('%Y-%m-%d')
+            else:
+                display_details['date'] = display_details['date'].astype(str)
+            
+            # 格式化數值欄位
+            display_details['revenue'] = display_details['revenue'].fillna(0).apply(lambda x: f"{int(x):,}")
+            display_details['cumulative_revenue'] = display_details['cumulative_revenue'].fillna(0).apply(lambda x: f"{int(x):,}")
+            display_details['cost'] = display_details['cost'].fillna(0).apply(lambda x: f"{int(x):,}")
+            display_details['gross_profit'] = (display_details['gross_profit'].fillna(0) * 100).apply(lambda x: f"{x:.2f}%")
+            
+            # 填充空值
+            display_details['item'] = display_details['item'].fillna('').astype(str)
+            display_details['customer'] = display_details['customer'].fillna('').astype(str)
+            
+            # 重新命名欄位
+            display_details = display_details.rename(columns={
+                'item': '工作項目',
+                'customer': '客戶',
+                'date': '最新日期',
+                'revenue': '單件售價',
+                'cumulative_revenue': '累積營收',
+                'cost': '成本',
+                'gross_profit': '毛利率'
+            })
+            
+            # 顯示明細表格
+            st.dataframe(display_details, use_container_width=True, hide_index=True)
+            
+            # 計算總計
+            total_cumulative = details_df['cumulative_revenue'].fillna(0).sum()
+            total_revenue = details_df['revenue'].fillna(0).sum()
+            total_cost = details_df['cost'].fillna(0).sum()
+            
+            # 顯示總計列
+            st.markdown("---")
+            col1, col2, col3, col4 = st.columns([2, 1, 1, 1])
+            with col1:
+                st.write("**總計**")
+            with col2:
+                st.write(f"**單件售價總計：{int(total_revenue):,}**")
+            with col3:
+                st.write(f"**累積營收總計：{int(total_cumulative):,}**")
+            with col4:
+                st.write(f"**成本總計：{int(total_cost):,}**")
+        else:
+            st.info("目前沒有累積營收明細資料。")
     
     # Admin 模式的使用者選擇
     if st.session_state.current_user['role'] == 'admin':
