@@ -146,7 +146,7 @@ def filter_df_by_range(df: pd.DataFrame, wavelength_col: str, min_w: float, max_
     return df.loc[mask].reset_index(drop=True)
 
 
-st.header("吸光度/反射率 3D 視覺化")
+st.header("穿透率 3D 視覺化")
 
 # 檔案上傳
 uploaded_file = st.file_uploader("上傳 CSV 檔案", type=["csv"]) 
@@ -160,7 +160,7 @@ if uploaded_file is not None:
         st.stop()
 
 if df is None:
-    st.info("請上傳 CSV 檔案開始。格式：第 1 欄為波長 (nm)，其後每欄為樣品的吸光度或反射率。")
+    st.info("請上傳 CSV 檔案開始。格式：第 1 欄為波長 (nm)，其後每欄為樣品的穿透率。")
     st.caption("提示：支援自動偵測分隔符與常見編碼 (UTF-8/UTF-8-SIG/CP950)")
     st.stop()
 
@@ -180,6 +180,9 @@ all_sample_candidates = [c for c in df.columns if c != wavelength_col]
 default_selected_samples = [c for c in all_sample_candidates if c in default_samples] or all_sample_candidates
 sample_cols = st.multiselect("樣品欄（可多選）", options=all_sample_candidates, default=default_selected_samples)
 
+# 指標樣品（與圖表多選分離）
+stat_sample = st.selectbox("指標樣品（用於下方統計）", options=all_sample_candidates, index=0, format_func=clean_sample_name)
+
 if not sample_cols:
     st.error("請至少選擇一個樣品欄位")
     st.stop()
@@ -196,12 +199,15 @@ opacity = 1.0
 title = "Spectra - 3D Stacked Lines"
 x_label = "Wavelength (nm)"
 y_label = "Sample"
-z_label = "Absorbance / Reflectance"
+z_label = "Transmittance"
 
 reset_view = True
 
-# 範圍過濾
-df_filtered = filter_df_by_range(df[[wavelength_col] + sample_cols], wavelength_col, min_w, max_w)
+# 範圍過濾（包含指標樣品，避免未勾選仍需計算時缺欄位）
+columns_for_filter = [wavelength_col] + sample_cols
+if stat_sample not in columns_for_filter:
+    columns_for_filter = [wavelength_col] + list(dict.fromkeys(sample_cols + [stat_sample]))
+df_filtered = filter_df_by_range(df[columns_for_filter], wavelength_col, min_w, max_w)
 
 # 統計設定與單一樣品統計卡片（移到上方顯示）
 st.subheader("規格設定 (CPK 計算)")
@@ -212,12 +218,11 @@ with col_cfg2:
     lsl = st.number_input("規格下限 (LSL):", value=0.0000, step=0.0001, format="%.4f")
 
 st.subheader("統計分析")
-selected_sample = st.selectbox("選擇樣品", options=sample_cols, index=0, format_func=clean_sample_name)
 
-series = to_numeric_series(df_filtered[selected_sample])
+series = to_numeric_series(df_filtered[stat_sample])
 series = series[np.isfinite(series)]
 if series.empty:
-    st.warning(f"樣品 {selected_sample} 無有效數據")
+    st.warning(f"樣品 {stat_sample} 無有效數據")
 else:
     s_mean = float(series.mean())
     s_std = float(series.std(ddof=1)) if len(series) > 1 else 0.0
@@ -256,44 +261,45 @@ else:
     else:
         cpk_status = "USL 必須大於 LSL"
 
-    st.markdown(f"**樣品：{clean_sample_name(selected_sample)}**")
-    row1 = st.columns(4)
-    with row1[0]:
-        st.metric("平均", f"{s_mean:.4f}")
-    with row1[1]:
+    st.markdown(f"**樣品：{clean_sample_name(stat_sample)}**")
+    col_a, col_b, col_c, col_d, col_e, col_f = st.columns(6)
+    with col_a:
+        st.metric("平均值", f"{s_mean:.4f}")
         st.metric("標準差", f"{s_std:.4f}")
-    with row1[2]:
+    with col_b:
         st.metric("最小值", f"{s_min:.4f}")
-    with row1[3]:
         st.metric("最大值", f"{s_max:.4f}")
-
-    row2 = st.columns(4)
-    with row2[0]:
-        st.metric("範圍", f"{s_range:.4f}")
-    with row2[1]:
-        st.metric("樣本數 N", f"{total_n}")
-    with row2[2]:
-        st.metric("±1σ 內", f"{within_1}/{total_n}", f"{pct_1:.1f}%")
-    with row2[3]:
-        st.metric("±2σ 內", f"{within_2}/{total_n}", f"{pct_2:.1f}%")
-
-    row3 = st.columns(3)
-    with row3[0]:
-        st.metric("±3σ 內", f"{within_3}/{total_n}", f"{pct_3:.1f}%")
-    with row3[1]:
+    with col_c:
+        st.metric("±1σ 範圍內", f"{within_1}/{total_n}", f"{pct_1:.1f}%")
+    with col_d:
+        st.metric("±2σ 範圍內", f"{within_2}/{total_n}", f"{pct_2:.1f}%")
+    with col_e:
+        st.metric("±3σ 範圍內", f"{within_3}/{total_n}", f"{pct_3:.1f}%")
+    with col_f:
         if cpk is not None:
             st.metric("CPK 指標", f"{cpk:.3f}")
         else:
             st.metric("CPK 指標", "—")
-    with row3[2]:
+
+    # 移除卡片下方輔助資訊（範圍、樣本數、CPK 上/下限 caption）
+
+    st.subheader("CPK 製程能力分析")
+    col_cpk_l, col_cpk_r = st.columns(2)
+    with col_cpk_l:
+        st.write(f"規格範圍: {lsl:.4f} ~ {usl:.4f}")
+        st.write(f"規格公差: {usl - lsl:.4f}")
+        if cpk is not None:
+            st.write(f"CPK 值: {cpk:.3f}")
+        else:
+            st.write("CPK 值: —")
+    with col_cpk_r:
+        st.write(f"製程能力: {cpk_status}")
         if (cpk_upper is not None) and (cpk_lower is not None):
             st.write(f"CPK 上限: {cpk_upper:.3f}")
             st.write(f"CPK 下限: {cpk_lower:.3f}")
         else:
-            st.write("CPK 上/下限: —")
-
-    st.subheader("CPK 製程能力分析")
-    st.write(cpk_status)
+            st.write("CPK 上限: —")
+            st.write("CPK 下限: —")
 
     st.subheader("標準差範圍分析")
     st.write(f"±1σ 範圍: {s_mean - s_std:.4f} ~ {s_mean + s_std:.4f}")
