@@ -62,19 +62,25 @@ def _build_stepped_bowl_surface(steps, outer_radius, resolution=600, z_scale=0.0
     Z = np.zeros_like(R, dtype=float)
     Z[R > outer_radius] = np.nan  # 超出外徑區域不顯示
     
+    scaled_steps = []
+
     # 由外向內覆蓋各階高度
     for dia, depth in sorted(steps, key=lambda t: t[0], reverse=True):
         r_th = dia / 2.0
         mask = (R <= r_th)
-        Z[mask] = depth
+        depth_clipped = max(depth, -0.1)
+        scaled_depth = depth_clipped * z_scale
+        scaled_steps.append((dia, scaled_depth))
+        Z[mask] = scaled_depth
+
+    # 將頂部對齊 z = 0
+    finite_mask = np.isfinite(Z)
+    if finite_mask.any():
+        top_value = np.max(Z[finite_mask])
+        Z[finite_mask] -= top_value
+        scaled_steps = [(dia, depth - top_value) for dia, depth in scaled_steps]
     
-    # 限制中心最低高度（避免柱狀過深）
-    Z = np.clip(Z, -0.1, None)
-    
-    # 大幅縮小底盤 Z 值，讓它幾乎貼平
-    Z = Z * z_scale
-    
-    return X, Y, Z
+    return X, Y, Z, scaled_steps
 
 
 def create_visualization(df=None, show_shield=False, base_profile=None):
@@ -153,10 +159,13 @@ def create_visualization(df=None, show_shield=False, base_profile=None):
         outer_r = outer_dia / 2.0
         
         # 底盤 Z 軸縮放比例（大幅縮小讓底盤扁平）
-        bowl_z_scale = 0.02
+        bowl_z_scale = 0.035
         
         # 生成碗狀表面
-        bowl_X, bowl_Y, bowl_Z = _build_stepped_bowl_surface(base_profile, outer_r, resolution=400, z_scale=bowl_z_scale)
+        bowl_X, bowl_Y, bowl_Z, scaled_steps = _build_stepped_bowl_surface(
+            base_profile, outer_r, resolution=400, z_scale=bowl_z_scale
+        )
+        scaled_dict = {dia: depth for dia, depth in scaled_steps}
         
         fig.add_trace(go.Surface(
             x=bowl_X, 
@@ -167,28 +176,14 @@ def create_visualization(df=None, show_shield=False, base_profile=None):
             opacity=0.95,
             hoverinfo='skip'
         ))
-        
-        # 外圈邊界線
-        outer_height = 0.0  # 外圈高度
-        for dia, depth in base_profile:
-            if dia == outer_dia:
-                outer_height = depth * bowl_z_scale  # 套用縮放
-                break
-        
+
+        # 外圈邊界線（Top = 0）
         theta_boundary = np.linspace(0, 2*np.pi, 361)
-        fig.add_trace(go.Scatter3d(
-            x=outer_r * np.cos(theta_boundary),
-            y=outer_r * np.sin(theta_boundary),
-            z=np.full_like(theta_boundary, outer_height),
-            mode='lines',
-            line=dict(color='gray', width=3),
-            showlegend=False
-        ))
         
         # 各階層邊界線
         for dia, depth in base_profile:
-            if dia < outer_dia:
-                depth_clipped = max(depth, -0.1) * bowl_z_scale  # 套用縮放
+            if dia <= outer_dia:
+                depth_clipped = scaled_dict.get(dia, 0.0)
                 r_layer = dia / 2.0
                 fig.add_trace(go.Scatter3d(
                     x=r_layer * np.cos(theta_boundary),
@@ -202,9 +197,9 @@ def create_visualization(df=None, show_shield=False, base_profile=None):
         # 底部投影點落在碗狀表面上
         def get_step_height(x_val, y_val):
             r_val = np.sqrt(x_val**2 + y_val**2)
-            for dia, depth in sorted(base_profile, key=lambda t: t[0], reverse=True):
+            for dia, depth in sorted(scaled_steps, key=lambda t: t[0], reverse=True):
                 if r_val <= dia / 2.0:
-                    return max(depth, -0.1) * bowl_z_scale  # 套用縮放
+                    return depth
             return 0.0
         
         bowl_heights = np.array([get_step_height(xi, yi) for xi, yi in zip(x_in, y_in)])
@@ -258,17 +253,72 @@ def create_visualization(df=None, show_shield=False, base_profile=None):
             hoverinfo='skip'
         ))
     
-    # 4. 畫圓盤表面（3D高度圖）
-    fig.add_trace(go.Surface(x=xi_grid, y=yi_grid, z=zi_grid,
-                              colorscale='Jet', opacity=1, showscale=False, showlegend=False))
+    # 4. 移除圓盤表面（改用柱狀圖）
+    # fig.add_trace(go.Surface(x=xi_grid, y=yi_grid, z=zi_grid,
+    #                           colorscale='Jet', opacity=1, showscale=False, showlegend=False))
     
-    # 5. 畫3D空間中的測量點
-    fig.add_trace(go.Scatter3d(x=x_in, y=y_in, z=z_in, mode='markers',
-                               marker=dict(size=5, color=z_in, colorscale='Jet', opacity=0.6,
-                                           colorbar=dict(title='Z (mm)', x=0.02)),
-                               text=[f"Dimple: {list(df_in['Dimple'])[i]}<br>X: {list(df_in['X'])[i]:.2f} mm<br>Y: {list(df_in['Y'])[i]:.2f} mm<br>Z: {list(df_in['Z'])[i]:.4f} mm"
-                                     for i in range(len(df_in))],
-                               hoverinfo='text', showlegend=False))
+    # 5. 為每個 dimple 點畫一根柱子（從 z=0 到測量點）
+    # 計算顏色映射
+    z_min_val = z_in.min()
+    z_max_val = z_in.max()
+    
+    # 使用 Jet colorscale
+    from plotly.colors import sample_colorscale
+    
+    for i in range(len(x_in)):
+        x_val = x_in.iloc[i]
+        y_val = y_in.iloc[i]
+        z_val = z_in.iloc[i]
+        dimple_name = df_in['Dimple'].iloc[i]
+        
+        # 計算顏色（根據 Z 值）
+        if z_max_val > z_min_val:
+            normalized_z = (z_val - z_min_val) / (z_max_val - z_min_val)
+        else:
+            normalized_z = 0.5
+        color = sample_colorscale('Jet', [normalized_z])[0]
+        
+        # 畫柱子（從 z=0 到測量點）
+        fig.add_trace(go.Scatter3d(
+            x=[x_val, x_val],
+            y=[y_val, y_val],
+            z=[0, z_val],
+            mode='lines',
+            line=dict(color=color, width=4),
+            showlegend=False,
+            hoverinfo='text',
+            hovertext=f"Dimple: {dimple_name}<br>X: {x_val:.2f} mm<br>Y: {y_val:.2f} mm<br>Z: {z_val:.4f} mm"
+        ))
+        
+        # 在柱子頂端加一個點
+        fig.add_trace(go.Scatter3d(
+            x=[x_val],
+            y=[y_val],
+            z=[z_val],
+            mode='markers',
+            marker=dict(size=4, color=color),
+            showlegend=False,
+            hoverinfo='skip'
+        ))
+    
+    # 加入 colorbar（使用一個隱藏的 scatter 來顯示色階）
+    fig.add_trace(go.Scatter3d(
+        x=[x_in.iloc[0]],
+        y=[y_in.iloc[0]],
+        z=[z_in.iloc[0]],
+        mode='markers',
+        marker=dict(
+            size=0.1,
+            color=[z_min_val],
+            colorscale='Jet',
+            cmin=z_min_val,
+            cmax=z_max_val,
+            colorbar=dict(title='Z (mm)', x=1.02),
+            showscale=True
+        ),
+        showlegend=False,
+        hoverinfo='skip'
+    ))
 
     fig.update_layout(
         scene=dict(
