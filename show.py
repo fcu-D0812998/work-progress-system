@@ -41,12 +41,49 @@ def validate_every_cell(df):
                     )
 
 
-def create_visualization(df=None, show_shield=False):
+def _build_stepped_bowl_surface(steps, outer_radius, resolution=600, z_scale=0.05):
+    """根據階梯設定生成碗狀表面網格（參考 test.py）
+    
+    參數:
+        steps: List[Tuple[直徑(mm), 深度(mm)]] - 階梯設定
+        outer_radius: 外圈半徑
+        resolution: 網格解析度
+        z_scale: 底盤 Z 軸縮放比例（預設 0.05，讓底盤極扁）
+    
+    返回:
+        (X, Y, Z) 網格座標
+    """
+    x = np.linspace(-outer_radius, outer_radius, resolution)
+    y = np.linspace(-outer_radius, outer_radius, resolution)
+    X, Y = np.meshgrid(x, y)
+    R = np.sqrt(X**2 + Y**2)
+    
+    # 初始化 Z 值
+    Z = np.zeros_like(R, dtype=float)
+    Z[R > outer_radius] = np.nan  # 超出外徑區域不顯示
+    
+    # 由外向內覆蓋各階高度
+    for dia, depth in sorted(steps, key=lambda t: t[0], reverse=True):
+        r_th = dia / 2.0
+        mask = (R <= r_th)
+        Z[mask] = depth
+    
+    # 限制中心最低高度（避免柱狀過深）
+    Z = np.clip(Z, -0.1, None)
+    
+    # 大幅縮小底盤 Z 值，讓它幾乎貼平
+    Z = Z * z_scale
+    
+    return X, Y, Z
+
+
+def create_visualization(df=None, show_shield=False, base_profile=None):
     """創建 3D Dimple 視覺化，含格式檢查
     
     參數:
         df: 資料框
         show_shield: 是否顯示 z=0.001 的遮擋圓盤（從底部往上看時阻擋3D點）
+        base_profile: Optional[List[Tuple[直徑(mm), 高度(mm)]]] - AMAT Heater 階梯設定
     """
     if df is None:
         df_raw = pd.read_csv("B01_to_B50_output.csv", header=None)
@@ -109,17 +146,92 @@ def create_visualization(df=None, show_shield=False):
     # 畫圖
     fig = go.Figure()
     
-    # 1. 底部邊界圓圈線
-    fig.add_trace(go.Scatter3d(x=circle_x, y=circle_y, z=circle_z, mode='lines',
-                               line=dict(color='lightblue', width=4), showlegend=False))
-    
-    # 2. 底部投影點（z=0）
-    fig.add_trace(go.Scatter3d(x=x_in, y=y_in, z=np.zeros_like(z_in), mode='markers',
-                               marker=dict(size=10, color=z_in, colorscale='Jet', opacity=1, symbol='circle'),
-                               hoverinfo='text', hovertext=[
-                                   f"Dimple: {list(df_in['Dimple'])[i]}<br>X: {list(df_in['X'])[i]:.2f} mm<br>Y: {list(df_in['Y'])[i]:.2f} mm<br>Z: {list(df_in['Z'])[i]:.4f} mm"
-                                   for i in range(len(df_in))],
-                               showlegend=False))
+    # 1. 碗狀底面（如果有提供階梯設定）
+    if base_profile and len(base_profile) >= 2:
+        # 使用最大直徑作為外圈半徑
+        outer_dia = max([dia for dia, _ in base_profile])
+        outer_r = outer_dia / 2.0
+        
+        # 底盤 Z 軸縮放比例（大幅縮小讓底盤扁平）
+        bowl_z_scale = 0.02
+        
+        # 生成碗狀表面
+        bowl_X, bowl_Y, bowl_Z = _build_stepped_bowl_surface(base_profile, outer_r, resolution=400, z_scale=bowl_z_scale)
+        
+        fig.add_trace(go.Surface(
+            x=bowl_X, 
+            y=bowl_Y, 
+            z=bowl_Z,
+            showscale=False,
+            colorscale='Viridis',
+            opacity=0.95,
+            hoverinfo='skip'
+        ))
+        
+        # 外圈邊界線
+        outer_height = 0.0  # 外圈高度
+        for dia, depth in base_profile:
+            if dia == outer_dia:
+                outer_height = depth * bowl_z_scale  # 套用縮放
+                break
+        
+        theta_boundary = np.linspace(0, 2*np.pi, 361)
+        fig.add_trace(go.Scatter3d(
+            x=outer_r * np.cos(theta_boundary),
+            y=outer_r * np.sin(theta_boundary),
+            z=np.full_like(theta_boundary, outer_height),
+            mode='lines',
+            line=dict(color='gray', width=3),
+            showlegend=False
+        ))
+        
+        # 各階層邊界線
+        for dia, depth in base_profile:
+            if dia < outer_dia:
+                depth_clipped = max(depth, -0.1) * bowl_z_scale  # 套用縮放
+                r_layer = dia / 2.0
+                fig.add_trace(go.Scatter3d(
+                    x=r_layer * np.cos(theta_boundary),
+                    y=r_layer * np.sin(theta_boundary),
+                    z=np.full_like(theta_boundary, depth_clipped),
+                    mode='lines',
+                    line=dict(color='lightgray', width=2),
+                    showlegend=False
+                ))
+        
+        # 底部投影點落在碗狀表面上
+        def get_step_height(x_val, y_val):
+            r_val = np.sqrt(x_val**2 + y_val**2)
+            for dia, depth in sorted(base_profile, key=lambda t: t[0], reverse=True):
+                if r_val <= dia / 2.0:
+                    return max(depth, -0.1) * bowl_z_scale  # 套用縮放
+            return 0.0
+        
+        bowl_heights = np.array([get_step_height(xi, yi) for xi, yi in zip(x_in, y_in)])
+        
+        fig.add_trace(go.Scatter3d(
+            x=x_in, y=y_in, z=bowl_heights,
+            mode='markers',
+            marker=dict(size=9, color=z_in, colorscale='Jet', opacity=1, symbol='circle'),
+            hoverinfo='text',
+            hovertext=[
+                f"Dimple: {list(df_in['Dimple'])[i]}<br>X: {list(df_in['X'])[i]:.2f} mm<br>Y: {list(df_in['Y'])[i]:.2f} mm<br>Z: {list(df_in['Z'])[i]:.4f} mm"
+                for i in range(len(df_in))
+            ],
+            showlegend=False
+        ))
+    else:
+        # 原本的平面圓圈線
+        fig.add_trace(go.Scatter3d(x=circle_x, y=circle_y, z=circle_z, mode='lines',
+                                   line=dict(color='lightblue', width=4), showlegend=False))
+        
+        # 原本的底部投影點（z=0）
+        fig.add_trace(go.Scatter3d(x=x_in, y=y_in, z=np.zeros_like(z_in), mode='markers',
+                                   marker=dict(size=10, color=z_in, colorscale='Jet', opacity=1, symbol='circle'),
+                                   hoverinfo='text', hovertext=[
+                                       f"Dimple: {list(df_in['Dimple'])[i]}<br>X: {list(df_in['X'])[i]:.2f} mm<br>Y: {list(df_in['Y'])[i]:.2f} mm<br>Z: {list(df_in['Z'])[i]:.4f} mm"
+                                       for i in range(len(df_in))],
+                                   showlegend=False))
     
     # 3. 不透明圓盤（z=0.001）- 可選的遮擋層，從底部往上看時阻擋上方的3D點
     if show_shield:
@@ -161,7 +273,7 @@ def create_visualization(df=None, show_shield=False):
     fig.update_layout(
         scene=dict(
             xaxis_title='X (mm)', yaxis_title='Y (mm)', zaxis_title='Z (mm)',
-            aspectmode='manual', aspectratio=dict(x=1, y=1, z=0.4),
+            aspectmode='manual', aspectratio=dict(x=1, y=1, z=0.5),
             camera=dict(eye=dict(x=-1.25, y=1.25, z=0.75), up=dict(x=0, y=1, z=1)),
             xaxis=dict(showgrid=True, zeroline=True, showbackground=False),
             yaxis=dict(showgrid=True, zeroline=True, showbackground=False),

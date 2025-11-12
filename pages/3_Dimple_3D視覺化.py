@@ -274,6 +274,59 @@ if uploaded_file is not None:
         
         # 移除顯示名稱列表，只保留統計資訊
         
+        # AMAT TiN Heater 階梯設定
+        st.subheader("🛠️ AMAT TiN Heater 階梯設定")
+        st.write("請輸入各階層的直徑與高度（單位 mm）。此設定僅影響底部碗狀表面，不改變 dimple 的實際高度。")
+        
+        default_layers = [
+            ("外圈", 295.7, 0.0),
+            ("階梯 1", 276.95, -0.05),
+            ("階梯 2", 181.45, -0.075),
+            ("階梯 3", 77.65, -0.10),
+            ("中心", 3.25, -3.15),
+        ]
+        
+        user_layers = []
+        for idx, (label, default_diameter, default_height) in enumerate(default_layers):
+            col_d, col_h = st.columns(2)
+            diameter_val = col_d.number_input(
+                f"{label} 直徑 (mm)",
+                value=float(default_diameter),
+                step=0.01,
+                min_value=0.0,
+                format="%.4f",
+                key=f"heater_diameter_{idx}"
+            )
+            height_val = col_h.number_input(
+                f"{label} 高度 (mm)",
+                value=float(default_height),
+                step=0.001,
+                format="%.4f",
+                key=f"heater_height_{idx}"
+            )
+            user_layers.append((diameter_val, height_val))
+        
+        # 驗證輸入
+        valid_layers = [(float(d), float(h)) for d, h in user_layers if d is not None]
+        if not valid_layers or max(layer[0] for layer in valid_layers) <= 0:
+            st.error("外圈直徑必須大於 0 mm，請調整輸入。")
+            st.stop()
+        
+        # 由大到小排序並移除重複直徑
+        valid_layers.sort(key=lambda item: item[0], reverse=True)
+        unique_layers = []
+        seen_diameters = set()
+        for diameter, height in valid_layers:
+            if diameter not in seen_diameters:
+                unique_layers.append((diameter, height))
+                seen_diameters.add(diameter)
+        
+        if len([d for d, _ in unique_layers if d > 0]) < 2:
+            st.error("至少需要兩個不同的直徑來形成階梯結構，請調整輸入。")
+            st.stop()
+        
+        st.success(f"✅ 階梯設定完成！共 {len(unique_layers)} 層")
+        
         # 標準差過濾選項
         st.subheader("🔍 資料過濾選項")
         filter_option = st.selectbox(
@@ -307,8 +360,8 @@ if uploaded_file is not None:
             df_filtered = df
             st.info(f"顯示所有資料：{total_points} 個點")
         
-        # 直接使用 show.py 的 create_visualization 函數
-        fig = show.create_visualization(df_filtered)
+        # 直接使用 show.py 的 create_visualization 函數，傳入階梯參數
+        fig = show.create_visualization(df_filtered, base_profile=unique_layers)
         
         # 使用全寬顯示圖表，並設定高度
         st.plotly_chart(fig, use_container_width=True, height=800)
