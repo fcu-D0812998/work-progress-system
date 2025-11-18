@@ -83,12 +83,15 @@ def _build_stepped_bowl_surface(steps, outer_radius, resolution=600, z_scale=0.0
     return X, Y, Z, scaled_steps
 
 
-def create_visualization(df=None, show_shield=False, base_profile=None):
+def create_visualization(df=None, show_shield=False, show_vertical_lines=True, z_aspect_ratio=0.5, marker_size=4, base_profile=None):
     """創建 3D Dimple 視覺化，含格式檢查
     
     參數:
         df: 資料框
         show_shield: 是否顯示 z=0.001 的遮擋圓盤（從底部往上看時阻擋3D點）
+        show_vertical_lines: 是否顯示從平面點到空間點的垂直線（柱子）
+        z_aspect_ratio: z 軸比例（控制空間點之間的視覺距離，值越小距離越近，默認 0.5）
+        marker_size: 空間測量點的標記大小（默認 4）
         base_profile: Optional[List[Tuple[直徑(mm), 高度(mm)]]] - AMAT Heater 階梯設定
     """
     if df is None:
@@ -278,27 +281,29 @@ def create_visualization(df=None, show_shield=False, base_profile=None):
             normalized_z = 0.5
         color = sample_colorscale('Jet', [normalized_z])[0]
         
-        # 畫柱子（從 z=0 到測量點）
-        fig.add_trace(go.Scatter3d(
-            x=[x_val, x_val],
-            y=[y_val, y_val],
-            z=[0, z_val],
-            mode='lines',
-            line=dict(color=color, width=4),
-            showlegend=False,
-            hoverinfo='text',
-            hovertext=f"Dimple: {dimple_name}<br>X: {x_val:.2f} mm<br>Y: {y_val:.2f} mm<br>Z: {z_val:.4f} mm"
-        ))
+        # 畫柱子（從 z=0 到測量點）- 可選
+        if show_vertical_lines:
+            fig.add_trace(go.Scatter3d(
+                x=[x_val, x_val],
+                y=[y_val, y_val],
+                z=[0, z_val],
+                mode='lines',
+                line=dict(color=color, width=4),
+                showlegend=False,
+                hoverinfo='text',
+                hovertext=f"Dimple: {dimple_name}<br>X: {x_val:.2f} mm<br>Y: {y_val:.2f} mm<br>Z: {z_val:.4f} mm"
+            ))
         
-        # 在柱子頂端加一個點
+        # 在測量點位置顯示點
         fig.add_trace(go.Scatter3d(
             x=[x_val],
             y=[y_val],
             z=[z_val],
             mode='markers',
-            marker=dict(size=4, color=color),
+            marker=dict(size=marker_size, color=color),
             showlegend=False,
-            hoverinfo='skip'
+            hoverinfo='text',
+            hovertext=f"Dimple: {dimple_name}<br>X: {x_val:.2f} mm<br>Y: {y_val:.2f} mm<br>Z: {z_val:.4f} mm"
         ))
     
     # 加入 colorbar（使用一個隱藏的 scatter 來顯示色階）
@@ -323,7 +328,7 @@ def create_visualization(df=None, show_shield=False, base_profile=None):
     fig.update_layout(
         scene=dict(
             xaxis_title='X (mm)', yaxis_title='Y (mm)', zaxis_title='Z (mm)',
-            aspectmode='manual', aspectratio=dict(x=1, y=1, z=0.5),
+            aspectmode='manual', aspectratio=dict(x=1, y=1, z=z_aspect_ratio),
             camera=dict(eye=dict(x=-1.25, y=1.25, z=0.75), up=dict(x=0, y=1, z=1)),
             xaxis=dict(showgrid=True, zeroline=True, showbackground=False),
             yaxis=dict(showgrid=True, zeroline=True, showbackground=False),

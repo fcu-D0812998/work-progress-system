@@ -8,6 +8,7 @@ import streamlit as st
 import plotly.graph_objects as go
 import plotly.express as px
 import plotly.io as pio
+import chardet
 
 
 def clean_sample_name(name: str) -> str:
@@ -149,19 +150,107 @@ def filter_df_by_range(df: pd.DataFrame, wavelength_col: str, min_w: float, max_
 st.header("穿透率 3D 視覺化")
 
 # 檔案上傳
-uploaded_file = st.file_uploader("上傳 CSV 檔案", type=["csv"]) 
+uploaded_file = st.file_uploader("上傳 CSV 檔案", type=['csv', 'xlsx'])
 
 df: Optional[pd.DataFrame] = None
 if uploaded_file is not None:
     try:
-        df = try_read_csv_bytes(uploaded_file.read(), uploaded_file.name)
+        # 判斷格式
+        if uploaded_file.name.endswith('.csv'):
+            # 先讀取檔案內容來檢測編碼
+            raw_content = uploaded_file.read()
+            uploaded_file.seek(0)  # 重置檔案指標
+            
+            # 使用 chardet 自動檢測編碼
+            detected_encoding = chardet.detect(raw_content)
+            st.info(f"檢測到的編碼: {detected_encoding['encoding']} (信心度: {detected_encoding['confidence']:.2f})")
+            
+            # 嘗試不同的編碼
+            encodings_to_try = [
+                detected_encoding['encoding'] if detected_encoding['confidence'] > 0.7 else None,
+                'utf-8',
+                'big5',
+                'gbk',
+                'gb2312',
+                'latin1',
+                'cp950',
+                'utf-8-sig'
+            ]
+            
+            content = None
+            used_encoding = None
+            
+            for encoding in encodings_to_try:
+                if encoding:
+                    try:
+                        content = raw_content.decode(encoding)
+                        used_encoding = encoding
+                        st.success(f"成功使用編碼: {encoding}")
+                        break
+                    except (UnicodeDecodeError, LookupError):
+                        continue
+            
+            if content is None:
+                st.error("無法解碼檔案，請檢查檔案編碼")
+                st.stop()
+            
+            # 檢查檔案格式
+            lines = content.strip().split('\n')
+            if len(lines) > 0:
+                first_line = lines[0]
+                
+                # 檢查是否為標準 CSV 格式
+                if ',' in first_line or '\t' in first_line:
+                    st.info("檢測到標準 CSV 格式")
+                    try:
+                        # 使用檢測到的編碼讀取 CSV（支援自動偵測分隔符）
+                        buffer = io.BytesIO(raw_content)
+                        df = pd.read_csv(buffer, sep=None, engine="python", encoding=used_encoding)
+                    except Exception as e:
+                        # 如果使用檢測到的編碼失敗，嘗試使用 try_read_csv_bytes 函數
+                        try:
+                            df = try_read_csv_bytes(raw_content, uploaded_file.name)
+                        except Exception as e2:
+                            st.error(f"讀取 CSV 檔案時發生錯誤: {str(e2)}")
+                            st.stop()
+                        
+                # 檢查是否為特殊格式（每行一個資料點）
+                else:
+                    st.info("檢測到特殊格式檔案")
+                    try:
+                        # 嘗試使用檢測到的編碼讀取
+                        buffer = io.BytesIO(raw_content)
+                        df = pd.read_csv(buffer, sep=None, engine="python", encoding=used_encoding)
+                    except Exception as e:
+                        # 如果失敗，嘗試使用 try_read_csv_bytes 函數
+                        try:
+                            df = try_read_csv_bytes(raw_content, uploaded_file.name)
+                        except Exception as e2:
+                            st.error(f"無法解析檔案格式: {str(e2)}")
+                            st.stop()
+            else:
+                st.error("檔案為空")
+                st.stop()
+                
+        elif uploaded_file.name.endswith('.xlsx'):
+            try:
+                df = pd.read_excel(uploaded_file, header=None)
+            except Exception as e:
+                st.error(f"讀取 Excel 檔案時發生錯誤: {str(e)}")
+                st.stop()
+        else:
+            st.error("不支援的檔案格式")
+            st.stop()
+            
     except Exception as e:
-        st.error(f"讀取 CSV 檔案時發生錯誤: {e}")
+        st.error(f"處理檔案時發生錯誤: {str(e)}")
+        st.write("請確保上傳的檔案包含有效的資料")
+        st.write("如果問題持續，請嘗試將檔案另存為 UTF-8 編碼")
         st.stop()
 
 if df is None:
-    st.info("請上傳 CSV 檔案開始。格式：第 1 欄為波長 (nm)，其後每欄為樣品的穿透率。")
-    st.caption("提示：支援自動偵測分隔符與常見編碼 (UTF-8/UTF-8-SIG/CP950)")
+    st.info("請上傳 CSV 或 Excel 檔案開始。格式：第 1 欄為波長 (nm)，其後每欄為樣品的穿透率。")
+    st.caption("提示：支援自動偵測分隔符與常見編碼 (UTF-8/UTF-8-SIG/CP950/Big5/GBK)")
     st.stop()
 
 # 基本清理
