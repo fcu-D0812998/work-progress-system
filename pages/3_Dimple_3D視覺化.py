@@ -283,7 +283,7 @@ if uploaded_file is not None:
             ("階梯 1", 276.95, -0.05),
             ("階梯 2", 181.45, -0.075),
             ("階梯 3", 77.65, -0.10),
-            ("中心", 3.25, -3.15),
+            ("中心", 3.25, -0.15),
         ]
         
         user_layers = []
@@ -360,8 +360,8 @@ if uploaded_file is not None:
             df_filtered = df
             st.info(f"顯示所有資料：{total_points} 個點")
         
-        # 直接使用 show.py 的 create_visualization 函數，傳入階梯參數
-        fig = show.create_visualization(df_filtered, base_profile=unique_layers)
+        # 使用 3D Dimple 視覺化函數
+        fig = show.create_dimple_3d_visualization(df_filtered, base_profile=unique_layers)
         
         # 使用全寬顯示圖表，並設定高度
         st.plotly_chart(fig, use_container_width=True, height=800)

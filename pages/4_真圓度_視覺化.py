@@ -307,9 +307,8 @@ if uploaded_file is not None:
             df_filtered = df
             st.info(f"顯示所有資料：{total_points} 個點")
         
-        # 使用 show.py 的 create_visualization 函數
-        # 針對真圓度視覺化：移除白色圓盤和垂直線，縮小空間點之間的 z 軸距離，放大空間點標記
-        fig = show.create_visualization(df_filtered, show_shield=False, show_vertical_lines=False, z_aspect_ratio=0.65, marker_size=6)
+        # 使用真圓度視覺化函數
+        fig = show.create_roundness_visualization(df_filtered, z_aspect_ratio=0.65, marker_size=6)
         
         # 使用全寬顯示圖表，並設定高度
         st.plotly_chart(fig, use_container_width=True, height=800)
