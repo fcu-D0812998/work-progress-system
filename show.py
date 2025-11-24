@@ -208,8 +208,8 @@ def create_dimple_3d_visualization(df=None, base_profile=None, show_vertical_lin
         
         # 平面投影點：z = 階層高度
         plane_z = step_height
-        # 空間中的點：z = 階層高度 + Z_Value
-        space_z = step_height + z_val
+        # 空間中的點：z = 階層高度 + Z_Value * 10（僅視覺化放大）
+        space_z = step_height + z_val * 100
         
         if show_vertical_lines:
             # 垂直線：從平面投影點到空間中的點
@@ -245,7 +245,7 @@ def create_dimple_3d_visualization(df=None, base_profile=None, show_vertical_lin
             camera=dict(eye=dict(x=-1.25, y=1.25, z=0.75), up=dict(x=0, y=1, z=1)),
             xaxis=dict(showgrid=True, zeroline=True, showbackground=False),
             yaxis=dict(showgrid=True, zeroline=True, showbackground=False),
-            zaxis=dict(showgrid=True, zeroline=True, showbackground=False)
+            zaxis=dict(showgrid=True, zeroline=True, showbackground=False, range=[-0.75, 0.75])
         ),
         title='3D Dimple Height Map', margin=dict(l=0, r=0, b=0, t=40),
         height=800, width=1200
