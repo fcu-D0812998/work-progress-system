@@ -209,7 +209,7 @@ def create_dimple_3d_visualization(df=None, base_profile=None, show_vertical_lin
         # 平面投影點：z = 階層高度
         plane_z = step_height
         # 空間中的點：z = 階層高度 + Z_Value * 10（僅視覺化放大）
-        space_z = step_height + z_val * 100
+        space_z = step_height + z_val * 10
         
         if show_vertical_lines:
             # 垂直線：從平面投影點到空間中的點
