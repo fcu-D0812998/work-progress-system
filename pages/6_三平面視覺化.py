@@ -4,6 +4,12 @@ import streamlit as st
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 from scipy.interpolate import griddata
+from typing import Optional
+
+
+PLANE_MARKER_SIZE = 3
+PLANE_MARKER_COLOR = "rgb(255,255,255)"
+PLANE_MARKER_OPACITY = 0.25
 
 
 def non_linear_scale_z(
@@ -69,6 +75,8 @@ def create_offset_surface(
     colorscale: str,
     z_title: str = "差異 (mm)",
     apply_nonlinear_scale: bool = False,
+    coloraxis: Optional[str] = None,
+    show_colorbar: bool = True,
 ) -> go.Surface:
     """建立差異值曲面圖（Z 可視覺化縮放；顏色仍對應原始 z）"""
     z_display = non_linear_scale_z(z) if apply_nonlinear_scale else z
@@ -98,10 +106,24 @@ def create_offset_surface(
         surfacecolor=zi_grid_original,
         name=name,
         colorscale=colorscale,
-        showscale=True,
-        colorbar=dict(title=z_title),
+        coloraxis=coloraxis,
+        showscale=show_colorbar,
+        colorbar=dict(title=z_title) if show_colorbar else None,
         opacity=0.9,
     )
+
+
+def calc_cmin_cmax(values: np.ndarray) -> tuple[float, float]:
+    finite = values[np.isfinite(values)]
+    if finite.size == 0:
+        return 0.0, 1.0
+    cmin = float(np.nanmin(finite))
+    cmax = float(np.nanmax(finite))
+    if cmin == cmax:
+        # 避免色階範圍為 0 導致顯示怪異
+        eps = 1e-9 if cmin == 0 else abs(cmin) * 1e-6
+        return cmin - eps, cmax + eps
+    return cmin, cmax
 
 
 def require_columns(df: pd.DataFrame, required: list[str], label: str) -> None:
@@ -120,7 +142,7 @@ def clean_common_excel(df: pd.DataFrame) -> pd.DataFrame:
 
 
 st.header("三平面視覺化（座標 / 孔徑 / 真圓度）")
-st.caption("請依序上傳 3 份 Excel（格式需與 visualize_3planes.py 完全一致）")
+st.caption("請依序上傳 3 份 Excel")
 
 col_u1, col_u2, col_u3 = st.columns(3)
 with col_u1:
@@ -211,9 +233,18 @@ try:
     x_oem = df["原廠_X"].to_numpy(dtype=float)
     y_oem = df["原廠_Y"].to_numpy(dtype=float)
     z_oem = np.abs((df["原廠_D"] - df["CAD_D"]).to_numpy(dtype=float))
+    cmin_diam, cmax_diam = calc_cmin_cmax(np.concatenate([z_oem, np.abs((df["德烜_D"] - df["CAD_D"]).to_numpy(dtype=float))]))
     fig_diam.add_trace(
         create_offset_surface(
-            x_oem, y_oem, z_oem, "原廠孔徑差異", "Reds", "孔徑差異 (mm)", apply_nonlinear_scale=True
+            x_oem,
+            y_oem,
+            z_oem,
+            "原廠孔徑差異",
+            "Turbo",
+            "孔徑差異 (mm)",
+            apply_nonlinear_scale=True,
+            coloraxis="coloraxis",
+            show_colorbar=False,
         ),
         row=1,
         col=1,
@@ -224,7 +255,8 @@ try:
             y=y_oem,
             z=np.zeros_like(x_oem),
             mode="markers",
-            marker=dict(size=3, color="rgba(220,20,60,0.3)"),
+            marker=dict(size=PLANE_MARKER_SIZE, color=PLANE_MARKER_COLOR),
+            opacity=PLANE_MARKER_OPACITY,
             showlegend=False,
             text=df["項目"],
             hovertemplate="<b>%{text}</b><br>原廠 XY: (%{x:.2f}, %{y:.2f})<br>Z=0<extra></extra>",
@@ -238,7 +270,15 @@ try:
     z_dh = np.abs((df["德烜_D"] - df["CAD_D"]).to_numpy(dtype=float))
     fig_diam.add_trace(
         create_offset_surface(
-            x_dh, y_dh, z_dh, "德烜孔徑差異", "Blues", "孔徑差異 (mm)", apply_nonlinear_scale=True
+            x_dh,
+            y_dh,
+            z_dh,
+            "德烜孔徑差異",
+            "Turbo",
+            "孔徑差異 (mm)",
+            apply_nonlinear_scale=True,
+            coloraxis="coloraxis",
+            show_colorbar=False,
         ),
         row=1,
         col=2,
@@ -249,7 +289,8 @@ try:
             y=y_dh,
             z=np.zeros_like(x_dh),
             mode="markers",
-            marker=dict(size=3, color="rgba(0,50,150,0.3)"),
+            marker=dict(size=PLANE_MARKER_SIZE, color=PLANE_MARKER_COLOR),
+            opacity=PLANE_MARKER_OPACITY,
             showlegend=False,
             text=df["項目"],
             hovertemplate="<b>%{text}</b><br>德烜 XY: (%{x:.2f}, %{y:.2f})<br>Z=0<extra></extra>",
@@ -279,10 +320,15 @@ try:
         col=2,
     )
     fig_diam.update_layout(
-        title=dict(text="原廠與德烜座標平面的孔徑差異曲面圖（相對 CAD）", x=0.5, font=dict(size=18)),
         height=700,
         width=1400,
         showlegend=False,
+        coloraxis=dict(
+            colorscale="Turbo",
+            cmin=cmin_diam,
+            cmax=cmax_diam,
+            colorbar=dict(title="孔徑差異 (mm)"),
+        ),
         margin=dict(l=0, r=0, t=60, b=0),
     )
     st.plotly_chart(fig_diam, use_container_width=True)
@@ -302,8 +348,18 @@ try:
     )
 
     z_oem_offset = df["原廠_座標偏移"].to_numpy(dtype=float)
+    cmin_off, cmax_off = calc_cmin_cmax(np.concatenate([df["原廠_座標偏移"].to_numpy(dtype=float), df["德烜_座標偏移"].to_numpy(dtype=float)]))
     fig_diff.add_trace(
-        create_offset_surface(x_oem, y_oem, z_oem_offset, "原廠座標偏移", "Reds", "座標偏移量 (mm)"),
+        create_offset_surface(
+            x_oem,
+            y_oem,
+            z_oem_offset,
+            "原廠座標偏移",
+            "Turbo",
+            "座標偏移量 (mm)",
+            coloraxis="coloraxis",
+            show_colorbar=False,
+        ),
         row=1,
         col=1,
     )
@@ -313,7 +369,8 @@ try:
             y=y_oem,
             z=np.zeros_like(x_oem),
             mode="markers",
-            marker=dict(size=3, color="rgba(220,20,60,0.3)"),
+            marker=dict(size=PLANE_MARKER_SIZE, color=PLANE_MARKER_COLOR),
+            opacity=PLANE_MARKER_OPACITY,
             showlegend=False,
             text=df["項目"],
             hovertemplate="<b>%{text}</b><br>原廠 XY: (%{x:.2f}, %{y:.2f})<br>Z=0<extra></extra>",
@@ -324,7 +381,16 @@ try:
 
     z_dh_offset = df["德烜_座標偏移"].to_numpy(dtype=float)
     fig_diff.add_trace(
-        create_offset_surface(x_dh, y_dh, z_dh_offset, "德烜座標偏移", "Blues", "座標偏移量 (mm)"),
+        create_offset_surface(
+            x_dh,
+            y_dh,
+            z_dh_offset,
+            "德烜座標偏移",
+            "Turbo",
+            "座標偏移量 (mm)",
+            coloraxis="coloraxis",
+            show_colorbar=False,
+        ),
         row=1,
         col=2,
     )
@@ -334,7 +400,8 @@ try:
             y=y_dh,
             z=np.zeros_like(x_dh),
             mode="markers",
-            marker=dict(size=3, color="rgba(0,50,150,0.3)"),
+            marker=dict(size=PLANE_MARKER_SIZE, color=PLANE_MARKER_COLOR),
+            opacity=PLANE_MARKER_OPACITY,
             showlegend=False,
             text=df["項目"],
             hovertemplate="<b>%{text}</b><br>德烜 XY: (%{x:.2f}, %{y:.2f})<br>Z=0<extra></extra>",
@@ -364,10 +431,15 @@ try:
         col=2,
     )
     fig_diff.update_layout(
-        title=dict(text="原廠與德烜座標平面的座標偏移量曲面圖（相對 CAD）", x=0.5, font=dict(size=18)),
         height=700,
         width=1400,
         showlegend=False,
+        coloraxis=dict(
+            colorscale="Turbo",
+            cmin=cmin_off,
+            cmax=cmax_off,
+            colorbar=dict(title="座標偏移量 (mm)"),
+        ),
         margin=dict(l=0, r=0, t=60, b=0),
     )
     st.plotly_chart(fig_diff, use_container_width=True)
@@ -384,8 +456,19 @@ try:
     )
 
     z_oem_round = (df["原廠_Roundness"] - df["CAD_Roundness"]).to_numpy(dtype=float)
+    z_dh_round = (df["德烜_Roundness"] - df["CAD_Roundness"]).to_numpy(dtype=float)
+    cmin_round, cmax_round = calc_cmin_cmax(np.concatenate([z_oem_round, z_dh_round]))
     fig_round.add_trace(
-        create_offset_surface(x_oem, y_oem, z_oem_round, "原廠真圓度差異", "RdBu_r", "真圓度差異 (mm)"),
+        create_offset_surface(
+            x_oem,
+            y_oem,
+            z_oem_round,
+            "原廠真圓度差異",
+            "Turbo",
+            "真圓度差異 (mm)",
+            coloraxis="coloraxis",
+            show_colorbar=False,
+        ),
         row=1,
         col=1,
     )
@@ -395,7 +478,8 @@ try:
             y=y_oem,
             z=np.zeros_like(x_oem),
             mode="markers",
-            marker=dict(size=3, color="rgba(220,20,60,0.3)"),
+            marker=dict(size=PLANE_MARKER_SIZE, color=PLANE_MARKER_COLOR),
+            opacity=PLANE_MARKER_OPACITY,
             showlegend=False,
             text=df["項目"],
             hovertemplate="<b>%{text}</b><br>原廠 XY: (%{x:.2f}, %{y:.2f})<br>Z=0<extra></extra>",
@@ -404,9 +488,17 @@ try:
         col=1,
     )
 
-    z_dh_round = (df["德烜_Roundness"] - df["CAD_Roundness"]).to_numpy(dtype=float)
     fig_round.add_trace(
-        create_offset_surface(x_dh, y_dh, z_dh_round, "德烜真圓度差異", "RdBu_r", "真圓度差異 (mm)"),
+        create_offset_surface(
+            x_dh,
+            y_dh,
+            z_dh_round,
+            "德烜真圓度差異",
+            "Turbo",
+            "真圓度差異 (mm)",
+            coloraxis="coloraxis",
+            show_colorbar=False,
+        ),
         row=1,
         col=2,
     )
@@ -416,7 +508,8 @@ try:
             y=y_dh,
             z=np.zeros_like(x_dh),
             mode="markers",
-            marker=dict(size=3, color="rgba(0,50,150,0.3)"),
+            marker=dict(size=PLANE_MARKER_SIZE, color=PLANE_MARKER_COLOR),
+            opacity=PLANE_MARKER_OPACITY,
             showlegend=False,
             text=df["項目"],
             hovertemplate="<b>%{text}</b><br>德烜 XY: (%{x:.2f}, %{y:.2f})<br>Z=0<extra></extra>",
@@ -446,10 +539,15 @@ try:
         col=2,
     )
     fig_round.update_layout(
-        title=dict(text="原廠與德烜座標平面的真圓度差異曲面圖（相對 CAD）", x=0.5, font=dict(size=18)),
         height=700,
         width=1400,
         showlegend=False,
+        coloraxis=dict(
+            colorscale="Turbo",
+            cmin=cmin_round,
+            cmax=cmax_round,
+            colorbar=dict(title="真圓度差異 (mm)"),
+        ),
         margin=dict(l=0, r=0, t=60, b=0),
     )
     st.plotly_chart(fig_round, use_container_width=True)
